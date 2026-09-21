@@ -384,7 +384,13 @@ impl OracleResolutionManager {
             }
         };
 
-        // Create oracle resolution record
+        if price <= 0 {
+            return Err(Error::InvalidInput);
+        }
+
+        Self::store_canonical_price(env, market_id, price, current_time, &outcome);
+        Self::validate_canonical_price_before_settlement(env, market_id)?;
+
         let resolution = OracleResolution {
             market_id: market_id.clone(),
             oracle_result: outcome.clone(),
@@ -396,11 +402,9 @@ impl OracleResolutionManager {
             feed_id: used_config.feed_id.clone(),
         };
 
-        // Store the result in the market
         MarketStateManager::set_oracle_result(&mut market, outcome.clone());
         MarketStateManager::update_market(env, market_id, &market);
 
-        // Emit oracle result event
         let provider_str = match used_config.provider {
             OracleProvider::Reflector => soroban_sdk::String::from_str(env, "Reflector"),
             OracleProvider::Pyth => soroban_sdk::String::from_str(env, "Pyth"),
@@ -423,13 +427,74 @@ impl OracleResolutionManager {
         Ok(resolution)
     }
 
+    /// Store canonical price record atomically for a market.
+    pub fn store_canonical_price(
+        env: &Env,
+        market_id: &Symbol,
+        price: i128,
+        timestamp: u64,
+        outcome: &String,
+    ) {
+        let record = crate::types::CanonicalPriceRecord {
+            price,
+            timestamp,
+            outcome: outcome.clone(),
+        };
+        env.storage()
+            .persistent()
+            .set(&(symbol_short!("can_price"), market_id.clone()), &record);
+        crate::events::EventEmitter::emit_canonical_price_updated(
+            env,
+            market_id,
+            price,
+            timestamp,
+        );
+    }
+
+    /// Retrieve canonical price record for a market.
+    pub fn get_canonical_price_record(
+        env: &Env,
+        market_id: &Symbol,
+    ) -> Option<crate::types::CanonicalPriceRecord> {
+        env.storage()
+            .persistent()
+            .get(&(symbol_short!("can_price"), market_id.clone()))
+    }
+
+    /// Retrieve canonical price for a market.
+    pub fn get_canonical_price(env: &Env, market_id: &Symbol) -> Option<i128> {
+        Self::get_canonical_price_record(env, market_id).map(|record| record.price)
+    }
+
+    /// Validate that the canonical price is present, non-stale, and valid before market settlement.
+    pub fn validate_canonical_price_before_settlement(
+        env: &Env,
+        market_id: &Symbol,
+    ) -> Result<(), Error> {
+        let record = Self::get_canonical_price_record(env, market_id)
+            .ok_or(Error::OracleUnavailable)?;
+        if record.price <= 0 {
+            return Err(Error::InvalidInput);
+        }
+        let now = env.ledger().timestamp();
+        if record.timestamp > now {
+            return Err(Error::OracleStale);
+        }
+        let cfg = crate::oracles::OracleValidationConfigManager::get_effective_config(
+            env, market_id,
+        );
+        let age = now.saturating_sub(record.timestamp);
+        if age > cfg.max_staleness_secs {
+            return Err(Error::OracleStale);
+        }
+        Ok(())
+    }
+
     /// Get oracle resolution for a market
     pub fn get_oracle_resolution(
         _env: &Env,
         _market_id: &Symbol,
     ) -> Result<Option<OracleResolution>, Error> {
-        // For now, return None since we don't store complex types in storage
-        // In a real implementation, you would store this in a more sophisticated way
         Ok(None)
     }
 
@@ -878,10 +943,14 @@ impl OracleResolutionManager {
     /// # Arguments
     /// - `env`    – Soroban environment.
     /// - `config` – [`MedianOracleConfig`] to store globally.
-    pub fn set_median_config(env: &Env, config: &MedianOracleConfig) {
+    pub fn set_median_config(env: &Env, config: &MedianOracleConfig) -> Result<(), Error> {
+        if config.min_sources < 1 || config.max_deviation_bps > 10_000 {
+            return Err(Error::InvalidOracleConfig);
+        }
         env.storage()
             .persistent()
             .set(&symbol_short!("med_cfg"), config);
+        Ok(())
     }
 
     /// Load the three-oracle median configuration from contract storage.
@@ -974,24 +1043,15 @@ impl OracleResolutionManager {
 
         // ── 2. Load median config ────────────────────────────────────────
         let med_cfg = Self::get_median_config(env)?;
+        if med_cfg.min_sources < 1 {
+            return Err(Error::InvalidOracleConfig);
+        }
         let feed_id = market.oracle_config.feed_id.clone();
         let threshold = market.oracle_config.threshold;
         let comparison = market.oracle_config.comparison.clone();
 
-        // ── 3. Fetch from all three oracles sequentially (fail-closed) ────────
-        //
-        // Invariant: if any oracle that responds with price data returns data
-        // that is stale (age > max_staleness_secs), we abort the entire
-        // resolution with OracleStale rather than silently excluding the
-        // stale quote. This prevents resolution from proceeding on fewer
-        // sources than intended when staleness is the cause of exclusion.
-        //
-        // Oracles that are offline/unavailable (non-stale failures) are still
-        // excluded gracefully so that the min_sources check can determine
-        // whether enough fresh sources exist.
         let mut raw_quotes: Vec<OracleQuote> = Vec::new(env);
 
-        // Pyth (currently OracleUnavailable on Stellar; will be excluded gracefully).
         {
             let oracle = crate::oracles::PythOracle::new(med_cfg.pyth_address.clone());
             raw_quotes.push_back(Self::fetch_quote_fail_closed(
@@ -1002,7 +1062,6 @@ impl OracleResolutionManager {
                 &feed_id,
             )?);
         }
-        // Reflector – primary Stellar oracle.
         {
             let oracle = crate::oracles::ReflectorOracle::new(med_cfg.reflector_address.clone());
             raw_quotes.push_back(Self::fetch_quote_fail_closed(
@@ -1013,7 +1072,6 @@ impl OracleResolutionManager {
                 &feed_id,
             )?);
         }
-        // Band Protocol.
         {
             let oracle = crate::oracles::BandProtocolOracle::new(med_cfg.band_address.clone());
             raw_quotes.push_back(Self::fetch_quote_fail_closed(
@@ -1025,7 +1083,6 @@ impl OracleResolutionManager {
             )?);
         }
 
-        // ── 4. Unweighted baseline median for outlier detection ─────────────
         let baseline_prices = Self::collect_included_sorted(env, &raw_quotes);
         let initial_count = baseline_prices.len() as u32;
         if initial_count < med_cfg.min_sources {
@@ -1033,31 +1090,30 @@ impl OracleResolutionManager {
         }
         let baseline_median = Self::simple_median(&baseline_prices);
 
-        // ── 5. Mark outliers ─────────────────────────────────────────────────
         let mut final_quotes: Vec<OracleQuote> = Vec::new(env);
         for q in raw_quotes.iter() {
             let mut out = q.clone();
-            if out.included && baseline_median > 0 {
+            if out.price <= 0 {
+                out.included = false;
+            } else if out.included && baseline_median > 0 {
                 let abs_diff: i128 = if out.price > baseline_median {
                     out.price.saturating_sub(baseline_median)
                 } else {
                     baseline_median.saturating_sub(out.price)
                 };
-                // deviation_bps = |price - median| * 10_000 / median
                 let deviation_bps: u64 = (abs_diff as u64)
                     .saturating_mul(10_000)
                     .saturating_div(baseline_median as u64);
                 if deviation_bps > med_cfg.max_deviation_bps as u64 {
-                    out.included = false; // Outlier: exclude from weighted median.
+                    out.included = false;
                 }
             }
             final_quotes.push_back(out);
         }
 
-        // ── 6. Enforce minimum source count ────────────────────────────────
         let mut included_count: u32 = 0;
         for q in final_quotes.iter() {
-            if q.included {
+            if q.included && q.price > 0 {
                 included_count += 1;
             }
         }
@@ -1065,34 +1121,34 @@ impl OracleResolutionManager {
             return Err(Error::OracleNoConsensus);
         }
 
-        // ── 7. Confidence-weighted median ────────────────────────────────────
         let weighted_median = Self::weighted_median(&final_quotes)?;
+        if weighted_median <= 0 {
+            return Err(Error::OracleNoConsensus);
+        }
 
-        // ── 8. Outcome determination ────────────────────────────────────────
         let outcome =
             OracleUtils::determine_outcome(weighted_median, threshold, &comparison, env)?;
 
-        // ── 9. Persist oracle result and emit events ──────────────────────
+        Self::store_canonical_price(env, market_id, weighted_median, current_time, &outcome);
+        Self::validate_canonical_price_before_settlement(env, market_id)?;
+
         MarketStateManager::set_oracle_result(&mut market, outcome.clone());
         MarketStateManager::update_market(env, market_id, &market);
 
-        // Compute aggregate statistics for the consensus event.
         let avg_price = Self::average_included_price(&final_quotes);
         let price_var = Self::price_variance(&final_quotes, avg_price);
         let confidence_score = Self::aggregate_confidence(included_count, &final_quotes);
 
-        // Standard OracleConsensusReachedEvent for backward-compatible monitoring.
         crate::events::EventEmitter::emit_oracle_consensus_reached(
             env,
             market_id,
             &outcome,
             included_count,
-            3, // total oracle sources attempted
+            3,
             avg_price,
             price_var,
         );
 
-        // Per-oracle detail event with the full quote vector.
         crate::events::EventEmitter::emit_oracle_median_quotes(env, market_id, &final_quotes);
 
         Ok(MedianResolutionResult {
@@ -1190,16 +1246,19 @@ impl OracleResolutionManager {
                 let cfg = crate::oracles::OracleValidationConfigManager::get_effective_config(
                     env, market_id,
                 );
-                if observed_age > cfg.max_staleness_secs {
-                    // Emit a validation-failed event so operators can detect
-                    // which oracle was stale without reading contract state.
+                if data.publish_time > now || observed_age > cfg.max_staleness_secs {
+                    let failure_age = if data.publish_time > now {
+                        data.publish_time.saturating_sub(now)
+                    } else {
+                        observed_age
+                    };
                     crate::events::EventEmitter::emit_oracle_validation_failed(
                         env,
                         market_id,
                         &provider.name(),
                         feed_id,
                         &soroban_sdk::String::from_str(env, "stale_data"),
-                        observed_age,
+                        failure_age,
                         cfg.max_staleness_secs,
                         None,
                         cfg.max_confidence_bps,
@@ -1299,12 +1358,11 @@ impl OracleResolutionManager {
         let mut buf: [i128; 3] = [0; 3];
         let mut n: usize = 0;
         for q in quotes.iter() {
-            if q.included && n < 3 {
+            if q.included && q.price > 0 && n < 3 {
                 buf[n] = q.price;
                 n += 1;
             }
         }
-        // Bubble-sort the first n elements (n ≤ 3, so O(n²) is negligible).
         for i in 0..n {
             for j in 0..n.saturating_sub(i + 1) {
                 if buf[j] > buf[j + 1] {
@@ -1312,7 +1370,6 @@ impl OracleResolutionManager {
                 }
             }
         }
-        // Build Soroban Vec.
         let mut result: Vec<i128> = Vec::new(env);
         for i in 0..n {
             result.push_back(buf[i]);
@@ -1320,13 +1377,7 @@ impl OracleResolutionManager {
         result
     }
 
-    /// Compute the unweighted simple median of a **sorted** price list.
-    ///
-    /// For an odd number of elements the true middle value is returned.
-    /// For an even number the arithmetic mean of the two middle values is
-    /// returned (integer truncation; acceptable precision for outlier
-    /// detection on typical oracle prices).
-    /// Returns 0 for an empty list (callers always guard with `min_sources`).
+    /// Compute the unweighted simple median of a sorted price list.
     fn simple_median(sorted: &Vec<i128>) -> i128 {
         let n = sorted.len() as usize;
         if n == 0 {
@@ -1337,26 +1388,16 @@ impl OracleResolutionManager {
         } else {
             let lo = sorted.get((n / 2 - 1) as u32).unwrap_or(0);
             let hi = sorted.get((n / 2) as u32).unwrap_or(0);
-            // Overflow-safe average: avoids (lo + hi) overflow for large prices.
             (lo / 2) + (hi / 2) + ((lo % 2 + hi % 2) / 2)
         }
     }
 
     /// Compute the confidence-weighted median of the included quotes.
-    ///
-    /// Sorts the `(price, weight)` pairs ascending (using a fixed array so
-    /// no heap allocation is needed), then walks from the lowest price
-    /// upward accumulating weights until the cumulative weight first reaches
-    /// ⌈ total / 2 ⌉.  The price at that point is the weighted median.
-    ///
-    /// # Errors
-    /// Returns [`Error::OracleNoConsensus`] when no included quotes exist.
     fn weighted_median(quotes: &Vec<OracleQuote>) -> Result<i128, Error> {
-        // Collect at most 3 (price, weight) pairs.
         let mut pairs: [(i128, u32); 3] = [(0, 0); 3];
         let mut n: usize = 0;
         for q in quotes.iter() {
-            if q.included && n < 3 {
+            if q.included && q.price > 0 && n < 3 {
                 pairs[n] = (q.price, q.weight_bps.max(1));
                 n += 1;
             }
@@ -1364,7 +1405,6 @@ impl OracleResolutionManager {
         if n == 0 {
             return Err(Error::OracleNoConsensus);
         }
-        // Insertion sort by price ascending.
         for i in 1..n {
             let mut j = i;
             while j > 0 && pairs[j - 1].0 > pairs[j].0 {
@@ -1372,12 +1412,11 @@ impl OracleResolutionManager {
                 j -= 1;
             }
         }
-        // Accumulate weights until ⌈ total / 2 ⌉ is reached.
         let mut total: u64 = 0;
         for i in 0..n {
             total = total.saturating_add(pairs[i].1 as u64);
         }
-        let half: u64 = (total + 1) / 2; // ceiling division
+        let half: u64 = (total + 1) / 2;
         let mut cumulative: u64 = 0;
         let mut result: i128 = 0;
         for i in 0..n {
@@ -1387,17 +1426,18 @@ impl OracleResolutionManager {
                 break;
             }
         }
+        if result <= 0 {
+            return Err(Error::OracleNoConsensus);
+        }
         Ok(result)
     }
 
     /// Arithmetic mean price of all included quotes.
-    /// Used to populate the `average_price` field of
-    /// [`OracleConsensusReachedEvent`].
     fn average_included_price(quotes: &Vec<OracleQuote>) -> i128 {
         let mut sum: i128 = 0;
         let mut count: u32 = 0;
         for q in quotes.iter() {
-            if q.included {
+            if q.included && q.price > 0 {
                 sum = sum.saturating_add(q.price);
                 count += 1;
             }
@@ -1410,17 +1450,11 @@ impl OracleResolutionManager {
     }
 
     /// Integer proxy for price variance among included quotes.
-    ///
-    /// Computes the mean of squared deviations from `avg`, scaling each
-    /// squared term down by 10 000 before accumulating to keep the value
-    /// within i128 range for typical oracle prices (up to ~10¹³ base units).
-    /// Used to populate the `price_variance` field of
-    /// [`OracleConsensusReachedEvent`].
     fn price_variance(quotes: &Vec<OracleQuote>, avg: i128) -> i128 {
         let mut sum_sq: i128 = 0;
         let mut count: u32 = 0;
         for q in quotes.iter() {
-            if q.included {
+            if q.included && q.price > 0 {
                 let diff = q.price.saturating_sub(avg);
                 sum_sq = sum_sq
                     .saturating_add(diff.saturating_mul(diff).saturating_div(10_000));
@@ -1675,12 +1709,17 @@ impl MarketResolutionManager {
         }
         validation?;
 
-        // Retrieve the oracle result
         let oracle_result = market
             .oracle_result
             .as_ref()
             .ok_or(Error::OracleUnavailable)?
             .clone();
+
+        if let Some(record) = OracleResolutionManager::get_canonical_price_record(env, market_id) {
+            if record.price <= 0 {
+                return Err(Error::InvalidInput);
+            }
+        }
 
         // Calculate community consensus
         let community_consensus = MarketAnalytics::calculate_community_consensus(&market);
@@ -1910,7 +1949,7 @@ impl MarketResolutionManager {
     pub fn collect_included_sorted(env: &Env, quotes: &Vec<OracleQuote>) -> Vec<i128> {
         let mut prices: alloc::vec::Vec<i128> = alloc::vec::Vec::new();
         for q in quotes.iter() {
-            if q.included {
+            if q.included && q.price > 0 {
                 prices.push(q.price);
             }
         }
@@ -1933,7 +1972,7 @@ impl MarketResolutionManager {
     pub fn weighted_median(quotes: &Vec<OracleQuote>) -> Result<i128, Error> {
         let mut included: alloc::vec::Vec<OracleQuote> = alloc::vec::Vec::new();
         for q in quotes.iter() {
-            if q.included {
+            if q.included && q.price > 0 {
                 included.push(q);
             }
         }
@@ -1962,7 +2001,7 @@ impl MarketResolutionManager {
         let mut sum: i128 = 0;
         let mut count: i128 = 0;
         for q in quotes.iter() {
-            if q.included {
+            if q.included && q.price > 0 {
                 sum += q.price;
                 count += 1;
             }
@@ -1983,7 +2022,7 @@ impl MarketResolutionManager {
         let mut sum_sq: i128 = 0;
         let mut count: i128 = 0;
         for q in quotes.iter() {
-            if q.included {
+            if q.included && q.price > 0 {
                 let diff = (q.price - mean).abs();
                 sum_sq += diff * diff / 10_000;
                 count += 1;
@@ -2031,18 +2070,28 @@ impl MarketResolutionManager {
     /// Store the median oracle configuration in persistent storage.
     #[allow(dead_code)]
     pub fn set_median_config(env: &Env, config: &MedianOracleConfig) {
-        env.storage()
-            .persistent()
-            .set(&Symbol::new(env, "MEDIAN_CFG"), config);
+        let _ = OracleResolutionManager::set_median_config(env, config);
     }
 
     /// Retrieve the median oracle configuration from persistent storage.
     #[allow(dead_code)]
     pub fn get_median_config(env: &Env) -> Result<MedianOracleConfig, Error> {
-        env.storage()
-            .persistent()
-            .get(&Symbol::new(env, "MEDIAN_CFG"))
-            .ok_or(Error::ConfigNotFound)
+        OracleResolutionManager::get_median_config(env)
+    }
+
+    /// Retrieve the canonical price for a market.
+    #[allow(dead_code)]
+    pub fn get_canonical_price(env: &Env, market_id: &Symbol) -> Option<i128> {
+        OracleResolutionManager::get_canonical_price(env, market_id)
+    }
+
+    /// Retrieve the canonical price record for a market.
+    #[allow(dead_code)]
+    pub fn get_canonical_price_record(
+        env: &Env,
+        market_id: &Symbol,
+    ) -> Option<crate::types::CanonicalPriceRecord> {
+        OracleResolutionManager::get_canonical_price_record(env, market_id)
     }
 }
 

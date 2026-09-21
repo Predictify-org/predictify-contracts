@@ -2314,6 +2314,11 @@ impl ConfigManager {
         Ok(())
     }
 
+    /// Validate the contract configuration against all module rules.
+    pub fn validate_config(_env: &Env, config: &ContractConfig) -> Result<(), Error> {
+        ConfigValidator::validate_contract_config(config)
+    }
+
     /// Retrieves the current contract configuration from persistent storage.
     ///
     /// This function loads the previously stored contract configuration from

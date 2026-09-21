@@ -5643,6 +5643,19 @@ impl EventEmitter {
         );
     }
 
+    /// Emit canonical price update event when a canonical price is persisted.
+    pub fn emit_canonical_price_updated(
+        env: &Env,
+        market_id: &Symbol,
+        price: i128,
+        timestamp: u64,
+    ) {
+        env.events().publish(
+            (symbol_short!("can_price"), market_id.clone()),
+            (price, timestamp),
+        );
+    }
+
     /// Emit admin override event when an admin manually overrides an oracle-verified result.
     pub fn emit_admin_override(
         env: &Env,

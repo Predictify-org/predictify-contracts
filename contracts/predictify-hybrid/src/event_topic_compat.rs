@@ -120,6 +120,7 @@ pub const TOPIC_REGISTRY: &[(&str, u32, &str)] = &[
     ("orc_hlth",  1, "oracle_health"),
     ("orc_cons",  1, "oracle_consensus"),
     ("orc_med_q", 1, "oracle_median_queried"),
+    ("can_price", 1, "canonical_price_updated"),
     ("ora_deg",   1, "oracle_degraded"),
     ("ora_rec",   1, "oracle_recovered"),
     ("fbk_used",  1, "fallback_used"),

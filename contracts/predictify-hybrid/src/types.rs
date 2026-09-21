@@ -569,19 +569,17 @@ impl OracleProvider {
     /// ```
     pub fn name(&self) -> String {
         let env = soroban_sdk::Env::default();
+        self.name_with_env(&env)
+    }
+
+    /// Returns the provider name using the given environment.
+    pub fn name_with_env(&self, env: &Env) -> String {
         match self.as_str() {
-            "reflector" => String::from_str(&env, "Reflector"),
-            "pyth" => String::from_str(&env, "Pyth Network"),
-            "band_protocol" => String::from_str(&env, "Band Protocol"),
-            "dia" => String::from_str(&env, "DIA"),
-            unknown => {
-                let prefix = String::from_str(&env, "Unknown Provider (");
-                let suffix = String::from_str(&env, ")");
-                // Use string slicing for soroban_sdk::String
-                let result = prefix.clone();
-                // For simplicity, just return a basic message for unknown providers
-                String::from_str(&env, "Unknown Provider")
-            }
+            "reflector" => String::from_str(env, "Reflector"),
+            "pyth" => String::from_str(env, "Pyth Network"),
+            "band_protocol" => String::from_str(env, "Band Protocol"),
+            "dia" => String::from_str(env, "DIA"),
+            _ => String::from_str(env, "Unknown Provider"),
         }
     }
 
@@ -2243,6 +2241,15 @@ pub struct MedianOracleConfig {
     /// when fewer quotes survive filtering.  Must be ≥ 1;
     /// recommended value: 2.
     pub min_sources: u32,
+}
+
+/// Canonical price record persisted atomically before settlement.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalPriceRecord {
+    pub price: i128,
+    pub timestamp: u64,
+    pub outcome: String,
 }
 
 /// Oracle source configuration for multi-oracle support.
@@ -4079,7 +4086,7 @@ impl Bet {
 /// println!("Unique bettors: {}", stats.unique_bettors);
 /// ```
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BetStats {
     /// Total number of bets placed on this market
     pub total_bets: u32,

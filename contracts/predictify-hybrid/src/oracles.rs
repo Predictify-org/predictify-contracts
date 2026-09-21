@@ -3012,14 +3012,18 @@ impl OracleValidationConfigManager {
         let now = env.ledger().timestamp();
         let observed_age = now.saturating_sub(data.publish_time);
 
-        if observed_age > config.max_staleness_secs {
+        if data.publish_time > now || observed_age > config.max_staleness_secs {
             EventEmitter::emit_oracle_validation_failed(
                 env,
                 market_id,
-                &provider.name(),
+                &provider.name_with_env(env),
                 feed_id,
                 &String::from_str(env, "stale_data"),
-                observed_age,
+                if data.publish_time > now {
+                    data.publish_time.saturating_sub(now)
+                } else {
+                    observed_age
+                },
                 config.max_staleness_secs,
                 None,
                 config.max_confidence_bps,
@@ -3030,6 +3034,21 @@ impl OracleValidationConfigManager {
                 );
             }
             return Err(Error::OracleStale);
+        }
+
+        if data.price <= 0 {
+            EventEmitter::emit_oracle_validation_failed(
+                env,
+                market_id,
+                &provider.name_with_env(env),
+                feed_id,
+                &String::from_str(env, "invalid_sign"),
+                observed_age,
+                config.max_staleness_secs,
+                None,
+                config.max_confidence_bps,
+            );
+            return Err(Error::InvalidInput);
         }
 
         if *provider == OracleProvider::pyth() {
@@ -3055,7 +3074,7 @@ impl OracleValidationConfigManager {
                     EventEmitter::emit_oracle_validation_failed(
                         env,
                         market_id,
-                        &provider.name(),
+                        &provider.name_with_env(env),
                         feed_id,
                         &String::from_str(env, "confidence_too_wide"),
                         observed_age,
@@ -3104,7 +3123,7 @@ impl OracleValidationConfigManager {
                             EventEmitter::emit_oracle_validation_failed(
                                 env,
                                 market_id,
-                                &provider.name(),
+                                &provider.name_with_env(env),
                                 feed_id,
                                 &String::from_str(env, "rolling_median_outlier"),
                                 observed_age,
@@ -3144,7 +3163,7 @@ impl OracleValidationConfigManager {
                         EventEmitter::emit_oracle_validation_failed(
                             env,
                             market_id,
-                            &provider.name(),
+                            &provider.name_with_env(env),
                             feed_id,
                             &String::from_str(env, "price_deviation_exceeded"),
                             observed_age,
@@ -3404,7 +3423,7 @@ impl OracleIntegrationManager {
             oracle_result.price,
             oracle_result.threshold,
             &oracle_result.comparison,
-            &oracle_result.provider.name(),
+            &oracle_result.provider.name_with_env(env),
             &oracle_result.feed_id,
             oracle_result.confidence_score,
             oracle_result.sources_count,
@@ -3698,6 +3717,13 @@ impl OracleIntegrationManager {
         env.storage().persistent().set(
             &OracleIntegrationKey::OracleResult(market_id.clone()),
             result,
+        );
+        crate::resolution::OracleResolutionManager::store_canonical_price(
+            env,
+            market_id,
+            result.price,
+            result.timestamp,
+            &result.outcome,
         );
         Ok(())
     }

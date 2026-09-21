@@ -97,6 +97,8 @@ mod market_audit_tests;
 mod test_audit_trail;
 #[cfg(test)]
 mod event_topic_compat_tests;
+#[cfg(test)]
+mod oracle_hardening_tests;
 // #[cfg(any())]
 // mod utils_tests;
 // THis is the band protocol wasm std_reference.wasm
@@ -8593,6 +8595,42 @@ impl PredictifyHybrid {
             .instance()
             .get(&Symbol::new(&env, "cum_disp_fee"))
             .unwrap_or(0i128)
+    }
+
+    /// Retrieve the canonical price for a market.
+    pub fn get_canonical_price(env: Env, market_id: Symbol) -> Option<i128> {
+        resolution::OracleResolutionManager::get_canonical_price(&env, &market_id)
+    }
+
+    /// Retrieve the canonical price record for a market.
+    pub fn get_canonical_price_record(
+        env: Env,
+        market_id: Symbol,
+    ) -> Option<types::CanonicalPriceRecord> {
+        resolution::OracleResolutionManager::get_canonical_price_record(&env, &market_id)
+    }
+
+    /// Resolve a market using a three-oracle confidence-weighted median.
+    pub fn resolve_with_median(
+        env: Env,
+        market_id: Symbol,
+    ) -> Result<resolution::MedianResolutionResult, Error> {
+        resolution::OracleResolutionManager::resolve_with_median(&env, &market_id)
+    }
+
+    /// Configure the three-oracle median configuration globally.
+    pub fn set_median_config(
+        env: Env,
+        admin: Address,
+        config: types::MedianOracleConfig,
+    ) -> Result<(), Error> {
+        Self::require_admin_permission(&env, &admin, AdminPermission::UpdateConfig)?;
+        resolution::OracleResolutionManager::set_median_config(&env, &config)
+    }
+
+    /// Retrieve the global three-oracle median configuration.
+    pub fn get_median_config(env: Env) -> Result<types::MedianOracleConfig, Error> {
+        resolution::OracleResolutionManager::get_median_config(&env)
     }
 
 }
