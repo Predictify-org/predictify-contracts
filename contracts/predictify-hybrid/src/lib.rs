@@ -97,6 +97,8 @@ mod market_audit_tests;
 mod test_audit_trail;
 #[cfg(test)]
 mod event_topic_compat_tests;
+#[cfg(test)]
+mod storage_layout_tests;
 // #[cfg(any())]
 // mod utils_tests;
 // THis is the band protocol wasm std_reference.wasm

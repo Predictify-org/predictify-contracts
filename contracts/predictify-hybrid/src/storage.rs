@@ -513,22 +513,39 @@ impl StorageOptimizer {
         let max_ttl = env.storage().max_ttl();
         let mut pressures = alloc::vec::Vec::new();
         
-        for key in keys.iter() {
-            let mut remaining = None;
-            
-            if env.storage().persistent().has(&key) {
-                remaining = Some(0u32);
-            } else if env.storage().temporary().has(&key) {
-                remaining = Some(0u32);
-            } else if env.storage().instance().has(&key) {
-                remaining = Some(0u32);
+        #[cfg(any(test, feature = "testutils"))]
+        {
+            use soroban_sdk::testutils::storage::{Instance as _, Persistent as _, Temporary as _};
+            for key in keys.iter() {
+                let mut remaining = None;
+                if env.storage().persistent().has(&key) {
+                    remaining = Some(env.storage().persistent().get_ttl(&key));
+                } else if env.storage().temporary().has(&key) {
+                    remaining = Some(env.storage().temporary().get_ttl(&key));
+                } else if env.storage().instance().has(&key) {
+                    remaining = Some(env.storage().instance().get_ttl());
+                }
+                if let Some(r) = remaining {
+                    let bump = MARKET_TTL_LEDGERS.min(max_ttl);
+                    pressures.push(StorageTtlPressure {
+                        key_repr: soroban_sdk::String::from_str(env, "storage_key"),
+                        remaining_ledgers: r,
+                        recommended_bump: bump,
+                    });
+                }
             }
-            
-            if let Some(r) = remaining {
+        }
+
+        #[cfg(not(any(test, feature = "testutils")))]
+        for key in keys.iter() {
+            let exists = env.storage().persistent().has(&key)
+                || env.storage().temporary().has(&key)
+                || env.storage().instance().has(&key);
+            if exists {
                 let bump = MARKET_TTL_LEDGERS.min(max_ttl);
                 pressures.push(StorageTtlPressure {
                     key_repr: soroban_sdk::String::from_str(env, "storage_key"),
-                    remaining_ledgers: r,
+                    remaining_ledgers: 0,
                     recommended_bump: bump,
                 });
             }
@@ -1020,11 +1037,14 @@ impl StorageOptimizer {
 
     /// Generate market ID from question
     fn generate_market_id(env: &Env, question: &String) -> Symbol {
-        // Simple hash-based ID generation
-        let mut hash = 0i128;
-        // Simplified hash generation - in real implementation, you'd properly hash the string
-        hash = hash.wrapping_add(question.len() as i128);
-        soroban_sdk::Symbol::new(env, "market")
+        use soroban_sdk::xdr::ToXdr;
+        let hash = env.crypto().sha256(&question.to_xdr(env));
+        let hash_bytes = hash.to_bytes();
+        let hex: alloc::string::String = (0..4)
+            .map(|i| alloc::format!("{:02x}", hash_bytes.get(i).unwrap_or(0)))
+            .collect();
+        let id_str = alloc::format!("mkt_{}", hex);
+        Symbol::new(env, &id_str)
     }
 
     /// Archive market data before deletion

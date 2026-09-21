@@ -652,12 +652,82 @@ let key2 = Symbol::new(env, "UserStake");  // Inconsistent case
 
 ---
 
+## Frozen Storage Key Format (v1.0 Upgrade Specification)
+
+### 1. Key Families and Canonical Encodings
+
+Predictify Hybrid enforces strict key isolation across distinct key families to prevent cross-module key aliasing and ensure forward/backward compatibility across upgrades.
+
+| Key Family | Host Type | Canonical Encoding | Scope & Usage | Collision Isolation |
+|------------|-----------|--------------------|---------------|---------------------|
+| **Symbol Singletons** | `Symbol` | Direct 64-bit tagged `ScVal::Symbol` (max 32 chars) | Global state (`"Admin"`, `"Config"`, `"ContractPaused"`, `"CB_CONFIG"`) | Isolated from enums via tagged union types |
+| **Formatted Symbols** | `Symbol` | Formatted string `"{prefix}_{id}"` | Compressed market caching (`"compressed_{market_id}"`), archives | Scoped by module-specific string prefixes |
+| **Tuple Keys** | `(Symbol, T)` | `ScVal::Vec` of 2 elements `[ScVal::Symbol, ScVal::T]` | Balances `("Balance", user, asset)`, active limits `("ActiveEvents", creator)` | Tuple length and first element prevent collisions |
+| **Composite Vector Keys** | `Vec<Val>` | `ScVal::Vec` of n elements | Complex compound lookups | Distinct vector layouts |
+| **Market ID Keys** | `Symbol` | Unique market identifier symbol | Primary market state storage | Unique per market |
+| **DataKey Enum** | `DataKey` | `ScVal::Enum` / ContractType discriminant with payload | Subsystem storage, idempotency, rate limiting, access control | Frozen discriminant indices 0..31 |
+
+### 2. Frozen DataKey Variant Registry
+
+All `DataKey` enum variants are frozen. Future upgrades **must not** reorder or reassign existing discriminants. New variants must only be appended to the end of the enum.
+
+| Discriminant | Variant Name | Payload Types | Canonical Serialization / Purpose |
+|--------------|--------------|---------------|-----------------------------------|
+| `0` | `PlaceBetsIdem` | `(Address, BytesN<32>)` | Replay protection for bet placements |
+| `1` | `CreateEventIdem` | `(Address, BytesN<32>)` | Replay protection for event creation |
+| `2` | `Whitelisted` | `Address` | Protocol whitelist membership marker |
+| `3` | `Blacklisted` | `Address` | Protocol blacklist penalty marker |
+| `4` | `ArchivedMarket` | `(Symbol, u64)` | Archived market reference with retention timestamp |
+| `5` | `MarketExtensionTotal` | `Symbol` | Cumulative duration extensions granted to market |
+| `6` | `MarketMetadata` | `Symbol` | Market question and off-chain metadata commitment |
+| `7` | `MarketScratch` | `Symbol` | Temporary high-churn market scratch space |
+| `8` | `DisputeHistoryCap` | `None` (Unit) | Global maximum entries in dispute audit history |
+| `9` | `DisputeHistory` | `Symbol` | Dispute lifecycle chronological history log |
+| `10` | `DisputeStakeCap` | `(Symbol, Address)` | Per-user dispute staking limit per market |
+| `11` | `DisputeCumulativeStakeCap` | `Address` | Global cumulative dispute staking cap per user |
+| `12` | `MarketCache` | `Symbol` | Hot-path cached market configuration |
+| `13` | `AntiGriefFloor` | `None` (Unit) | Minimum economic threshold to prevent dispute griefing |
+| `14` | `DisputeCooldownSeconds` | `None` (Unit) | Cooldown period between dispute actions |
+| `15` | `DisputeAdminLastAction` | `Symbol` | Timestamp of last admin dispute action on market |
+| `16` | `ResolutionCooldownSeconds` | `None` (Unit) | Cooldown period required prior to market resolution |
+| `17` | `ResolutionAdminLastAction` | `Symbol` | Timestamp of last admin resolution action on market |
+| `18` | `GlobalConfig` | `None` (Unit) | Global protocol configuration parameters |
+| `19` | `MaxBetCap` | `None` (Unit) | Upper bound cap on individual bet sizes |
+| `20` | `UserStake` | `(Address, Symbol)` | Stake committed by user on specific market |
+| `21` | `EventNonce` | `Symbol` | Monotonic event generation counter per market |
+| `22` | `MarketAuditHead` | `Symbol` | Pointer to latest market audit log record |
+| `23` | `MarketAuditLog` | `(Symbol, u32)` | Indexed audit trail log entry for market |
+| `24` | `OracleAdminCooldownState` | `None` (Unit) | Oracle administrative cooldown tracker |
+| `25` | `MultisigRotationState` | `None` (Unit) | Multi-signature key rotation in-flight state |
+| `26` | `AdminOverrideNonce` | `None` (Unit) | Monotonic counter for emergency admin overrides |
+| `27` | `PerLedgerBetCap` | `None` (Unit) | Maximum aggregate bets permissible in single ledger |
+| `28` | `PerLedgerBetCounter` | `None` (Unit) | Current ledger bet counter tracker |
+| `29` | `CollusionDetectorConfig` | `Symbol` | Market-specific collusion detection thresholds |
+| `30` | `ClaimNonce` | `(Address, Symbol)` | Monotonic replay protection nonce for prediction claims |
+| `31` | `EventTopicAlias` | `Symbol` | Canonical event topic alias registry |
+
+### 3. Upgrade Immutability & Anti-Collision Rules
+
+1. **Discriminant Immutability**: Existing variants `0..31` cannot change payloads, change order, or be deleted.
+2. **Append-Only Extension**: New storage variants must be added at index `32+` at the bottom of the `DataKey` enum.
+3. **Cross-Family Key Isolation**: Storage keys belonging to `DataKey` variants are tagged as contract type enums by the Soroban host and are mathematically distinct from `Symbol` singletons or raw tuples.
+4. **Mandatory CI Verification**: Any modification to `storage.rs` triggers `tests/datakey_collision.rs` and `src/storage_layout_tests.rs`, validating $O(n^2)$ pairwise uniqueness across all variants and cross-family isolation.
+
+### 4. Migration Invariants & Procedures
+
+- **Empty State Migration**: When transitioning an unpopulated contract instance (`V1 -> V2`), migration initializers safely format metadata and return `completed` without data initialization errors.
+- **Populated State Migration**: Upgrades preserve all live market states, user balances, and claim nonces without truncation or data loss.
+- **Malformed & Unsupported Recovery**: Unsupported migration paths (e.g. downgrades `V3 -> V1`) are rejected cleanly with `unsupported_migration`. Corrupted or missing storage entries trigger integrity check failures (`StorageIntegrityResult::missing_data` or `corruption_detected`).
+
+---
+
 ## Audit Trail
 
 | Date | Auditor | Changes | Status |
 |------|---------|---------|--------|
 | 2026-04-27 | Storage Audit Team | Initial comprehensive audit | ✅ Complete |
-| TBD | - | Next review | Pending |
+| 2026-09-21 | Smart Contract Architecture Swarm | Issue #1377: Frozen DataKey storage specifications & 32-variant collision suite | ✅ Complete |
+
 
 ---
 

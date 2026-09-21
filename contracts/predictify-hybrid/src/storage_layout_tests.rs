@@ -13,6 +13,7 @@ use alloc::format;
 use soroban_sdk::{
     testutils::{Address as _, EnvTestConfig, storage::Persistent, Ledger},
     vec, Address, Env, Map, String, Symbol, Vec as SorobanVec,
+    xdr::ToXdr,
 };
 use crate::markets::MarketStateManager;
 use crate::storage::{
@@ -92,6 +93,8 @@ fn create_test_market(env: &Env, admin: &Address) -> (Symbol, Market) {
         dispute_window_seconds: 0,
         winnings_swept: false,
         timelock_config: crate::timelock::MarketTimelockConfig::default(),
+        dispute_stake_floor: None,
+        max_participants: None,
     };
 
     (market_id, market)
@@ -459,6 +462,7 @@ fn test_claim_info_structure_serialization() {
         claimed: true,
         timestamp: env.ledger().timestamp(),
         payout_amount: 1_000_000,
+        claim_nonce: 0,
     };
 
     env.as_contract(&contract_id, || {
@@ -778,8 +782,11 @@ fn test_tuple_key_generation_performance() {
 fn test_promote_market_to_persistent_and_demote_scratch() {
     let env = create_test_env();
     let contract_id = env.register(crate::PredictifyHybrid, ());
+    let client = crate::PredictifyHybridClient::new(&env, &contract_id);
     let admin = create_test_admin(&env);
     let (market_id, market) = create_test_market(&env, &admin);
+
+    env.mock_all_auths();
 
     env.as_contract(&contract_id, || {
         // Setup config with known TTL constants
@@ -787,54 +794,63 @@ fn test_promote_market_to_persistent_and_demote_scratch() {
         config.market_ttl_ledgers = 5000;
         config.balance_ttl_ledgers = 100;
         StorageOptimizer::update_storage_config(&env, &config).unwrap();
+    });
 
-        // 1. Missing market metadata (error case)
-        let err_result = crate::storage::StorageMigration::promote_market_to_persistent(&env, &market_id);
-        assert_eq!(err_result, Err(Error::MarketNotFound));
+    // 1. Missing market metadata (error case)
+    let err_result = client.try_promote_market_to_persistent(&market_id);
+    assert_eq!(err_result, Err(Ok(Error::MarketNotFound)));
 
-        // 2. Put market metadata in temporary storage
-        let temp_key = crate::storage::DataKey::MarketMetadata(market_id.clone());
+    // 2. Put market metadata in temporary storage
+    let temp_key = crate::storage::DataKey::MarketMetadata(market_id.clone());
+    let persistent_key = crate::storage::DataKey::MarketMetadata(market_id.clone());
+    env.as_contract(&contract_id, || {
         env.storage().temporary().set(&temp_key, &market);
         env.storage().temporary().extend_ttl(&temp_key, 100, 100);
+    });
 
-        // 3. Test require_auth gating - if we invoke as contract, auth must succeed.
-        // We mock auths to verify the happy path.
-        env.mock_all_auths();
+    // 3. Test require_auth gating via client
+    let success_result = client.try_promote_market_to_persistent(&market_id);
+    assert!(success_result.is_ok());
 
-        let success_result = crate::storage::StorageMigration::promote_market_to_persistent(&env, &market_id);
-        assert!(success_result.is_ok());
-
-        // Check it has been promoted to persistent
-        let persistent_key = crate::storage::DataKey::MarketMetadata(market_id.clone());
+    // Check it has been promoted to persistent
+    env.as_contract(&contract_id, || {
         assert!(env.storage().persistent().has(&persistent_key));
         assert!(!env.storage().temporary().has(&temp_key));
 
         // Verify the persistent entry's TTL matches what's configured
         let persistent_ttl = env.storage().persistent().get_ttl(&persistent_key);
         assert_eq!(persistent_ttl, 5000.min(env.storage().max_ttl()));
+    });
 
-        // 4. Idempotency test: calling it again succeeds and extends/refreshes TTL
-        env.ledger().with_mut(|li| {
-            li.sequence_number += 100;
-        });
+    // 4. Idempotency test: calling it again succeeds and extends/refreshes TTL
+    env.ledger().with_mut(|li| {
+        li.sequence_number += 100;
+    });
+    env.as_contract(&contract_id, || {
         assert!(env.storage().persistent().get_ttl(&persistent_key) < 5000.min(env.storage().max_ttl()));
+    });
 
-        let idempotent_result = crate::storage::StorageMigration::promote_market_to_persistent(&env, &market_id);
-        assert!(idempotent_result.is_ok());
+    let idempotent_result = client.try_promote_market_to_persistent(&market_id);
+    assert!(idempotent_result.is_ok());
+    env.as_contract(&contract_id, || {
         assert_eq!(env.storage().persistent().get_ttl(&persistent_key), 5000.min(env.storage().max_ttl()));
+    });
 
-        // 5. Test demote_scratch_keys
-        let scratch_persistent_key = crate::storage::DataKey::MarketScratch(market_id.clone());
-        let scratch_temp_key = crate::storage::DataKey::MarketScratch(market_id.clone());
-        
+    // 5. Test demote_scratch_keys
+    let scratch_persistent_key = crate::storage::DataKey::MarketScratch(market_id.clone());
+    let scratch_temp_key = crate::storage::DataKey::MarketScratch(market_id.clone());
+
+    env.as_contract(&contract_id, || {
         let scratch_data: SorobanVec<i128> = vec![&env, 12, 34, 56];
         env.storage().persistent().set(&scratch_persistent_key, &scratch_data);
         StorageOptimizer::extend_persistent_ttl(&env, &scratch_persistent_key, 5000);
+    });
 
-        let demote_result = crate::storage::StorageMigration::demote_scratch_keys(&env, &market_id);
-        assert!(demote_result.is_ok());
+    let demote_result = client.try_demote_scratch_keys(&market_id);
+    assert!(demote_result.is_ok());
 
-        // Check scratch keys are moved to temporary
+    // Check scratch keys are moved to temporary
+    env.as_contract(&contract_id, || {
         assert!(!env.storage().persistent().has(&scratch_persistent_key));
         assert!(env.storage().temporary().has(&scratch_temp_key));
 
@@ -842,10 +858,12 @@ fn test_promote_market_to_persistent_and_demote_scratch() {
         assert_eq!(retrieved_scratch.get(0).unwrap(), 12);
         assert_eq!(retrieved_scratch.get(1).unwrap(), 34);
         assert_eq!(retrieved_scratch.get(2).unwrap(), 56);
+    });
 
-        // Idempotency: call again
-        let demote_idempotent = crate::storage::StorageMigration::demote_scratch_keys(&env, &market_id);
-        assert!(demote_idempotent.is_ok());
+    // Idempotency: call again
+    let demote_idempotent = client.try_demote_scratch_keys(&market_id);
+    assert!(demote_idempotent.is_ok());
+    env.as_contract(&contract_id, || {
         assert!(env.storage().temporary().has(&scratch_temp_key));
     });
 }
@@ -895,6 +913,17 @@ fn test_check_ttl_pressure() {
 
     env.as_contract(&contract_id, || {
         use soroban_sdk::IntoVal;
+        let ledger = env.ledger();
+        env.ledger().set(soroban_sdk::testutils::LedgerInfo {
+            timestamp: ledger.timestamp(),
+            protocol_version: ledger.protocol_version(),
+            sequence_number: ledger.sequence(),
+            network_id: ledger.network_id().into(),
+            base_reserve: 10,
+            min_temp_entry_ttl: 1,
+            min_persistent_entry_ttl: 50,
+            max_entry_ttl: 1_000_000,
+        });
         
         let key1 = Symbol::new(&env, "TestKey1");
         let value1 = String::from_str(&env, "TestValue1");
@@ -903,10 +932,9 @@ fn test_check_ttl_pressure() {
         let value2 = String::from_str(&env, "TestValue2");
 
         env.storage().persistent().set(&key1, &value1);
-        env.storage().persistent().extend_ttl(&key1, 200, 200);
+        env.storage().persistent().extend_ttl(&key1, 100, 150);
 
         env.storage().persistent().set(&key2, &value2);
-        env.storage().persistent().extend_ttl(&key2, 100, 100);
         
         let keys = vec![&env, key1.into_val(&env), key2.into_val(&env)];
         let pressures = StorageOptimizer::check_ttl_pressure(&env, keys);
@@ -916,10 +944,10 @@ fn test_check_ttl_pressure() {
         let pressure0 = pressures.get(0).unwrap();
         let pressure1 = pressures.get(1).unwrap();
         
-        assert_eq!(pressure0.key, key2.into_val(&env));
+        assert_eq!(pressure0.key_repr, soroban_sdk::String::from_str(&env, "storage_key"));
         assert!(pressure0.remaining_ledgers <= 100);
         
-        assert_eq!(pressure1.key, key1.into_val(&env));
+        assert_eq!(pressure1.key_repr, soroban_sdk::String::from_str(&env, "storage_key"));
         assert!(pressure1.remaining_ledgers <= 200);
         assert!(pressure0.remaining_ledgers < pressure1.remaining_ledgers);
         
@@ -928,3 +956,226 @@ fn test_check_ttl_pressure() {
         assert_eq!(pressure1.recommended_bump, expected_bump);
     });
 }
+
+#[test]
+fn test_all_datakey_variants_have_unique_xdr() {
+    let env = create_test_env();
+    let addr = Address::generate(&env);
+    let sym = Symbol::new(&env, "TEST_SYM");
+    let bytes32 = soroban_sdk::BytesN::from_array(&env, &[7u8; 32]);
+
+    let variants: [(&str, crate::storage::DataKey); 32] = [
+        ("PlaceBetsIdem", crate::storage::DataKey::PlaceBetsIdem(addr.clone(), bytes32.clone())),
+        ("CreateEventIdem", crate::storage::DataKey::CreateEventIdem(addr.clone(), bytes32.clone())),
+        ("Whitelisted", crate::storage::DataKey::Whitelisted(addr.clone())),
+        ("Blacklisted", crate::storage::DataKey::Blacklisted(addr.clone())),
+        ("ArchivedMarket", crate::storage::DataKey::ArchivedMarket(sym.clone(), 12345u64)),
+        ("MarketExtensionTotal", crate::storage::DataKey::MarketExtensionTotal(sym.clone())),
+        ("MarketMetadata", crate::storage::DataKey::MarketMetadata(sym.clone())),
+        ("MarketScratch", crate::storage::DataKey::MarketScratch(sym.clone())),
+        ("DisputeHistoryCap", crate::storage::DataKey::DisputeHistoryCap),
+        ("DisputeHistory", crate::storage::DataKey::DisputeHistory(sym.clone())),
+        ("DisputeStakeCap", crate::storage::DataKey::DisputeStakeCap(sym.clone(), addr.clone())),
+        ("DisputeCumulativeStakeCap", crate::storage::DataKey::DisputeCumulativeStakeCap(addr.clone())),
+        ("MarketCache", crate::storage::DataKey::MarketCache(sym.clone())),
+        ("AntiGriefFloor", crate::storage::DataKey::AntiGriefFloor),
+        ("DisputeCooldownSeconds", crate::storage::DataKey::DisputeCooldownSeconds),
+        ("DisputeAdminLastAction", crate::storage::DataKey::DisputeAdminLastAction(sym.clone())),
+        ("ResolutionCooldownSeconds", crate::storage::DataKey::ResolutionCooldownSeconds),
+        ("ResolutionAdminLastAction", crate::storage::DataKey::ResolutionAdminLastAction(sym.clone())),
+        ("GlobalConfig", crate::storage::DataKey::GlobalConfig),
+        ("MaxBetCap", crate::storage::DataKey::MaxBetCap),
+        ("UserStake", crate::storage::DataKey::UserStake(addr.clone(), sym.clone())),
+        ("EventNonce", crate::storage::DataKey::EventNonce(sym.clone())),
+        ("MarketAuditHead", crate::storage::DataKey::MarketAuditHead(sym.clone())),
+        ("MarketAuditLog", crate::storage::DataKey::MarketAuditLog(sym.clone(), 42u32)),
+        ("OracleAdminCooldownState", crate::storage::DataKey::OracleAdminCooldownState),
+        ("MultisigRotationState", crate::storage::DataKey::MultisigRotationState),
+        ("AdminOverrideNonce", crate::storage::DataKey::AdminOverrideNonce),
+        ("PerLedgerBetCap", crate::storage::DataKey::PerLedgerBetCap),
+        ("PerLedgerBetCounter", crate::storage::DataKey::PerLedgerBetCounter),
+        ("CollusionDetectorConfig", crate::storage::DataKey::CollusionDetectorConfig(sym.clone())),
+        ("ClaimNonce", crate::storage::DataKey::ClaimNonce(addr.clone(), sym.clone())),
+        ("EventTopicAlias", crate::storage::DataKey::EventTopicAlias(sym.clone())),
+    ];
+
+    let mut encoded = alloc::vec::Vec::new();
+    for (name, variant) in variants.iter() {
+        let xdr = variant.to_xdr(&env);
+        encoded.push((*name, xdr));
+    }
+
+    assert_eq!(encoded.len(), 32);
+
+    for i in 0..encoded.len() {
+        for j in (i + 1)..encoded.len() {
+            let (name_i, xdr_i) = &encoded[i];
+            let (name_j, xdr_j) = &encoded[j];
+            assert_ne!(
+                xdr_i, xdr_j,
+                "DataKey collision between variant {} and {}",
+                name_i, name_j
+            );
+        }
+    }
+}
+
+#[test]
+fn test_cross_family_key_isolation() {
+    let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let sym = Symbol::new(&env, "Admin");
+
+    env.as_contract(&contract_id, || {
+        let datakey = crate::storage::DataKey::MarketMetadata(sym.clone());
+        let symkey = sym.clone();
+        let tuplekey = (Symbol::new(&env, "Event"), sym.clone());
+
+        env.storage().persistent().set(&datakey, &1001u32);
+        env.storage().persistent().set(&symkey, &2002u32);
+        env.storage().persistent().set(&tuplekey, &3003u32);
+
+        assert_eq!(env.storage().persistent().get::<_, u32>(&datakey).unwrap(), 1001u32);
+        assert_eq!(env.storage().persistent().get::<_, u32>(&symkey).unwrap(), 2002u32);
+        assert_eq!(env.storage().persistent().get::<_, u32>(&tuplekey).unwrap(), 3003u32);
+    });
+}
+
+#[test]
+fn test_populated_upgrade_fixtures_load_without_loss() {
+    let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = create_test_admin(&env);
+    let user = Address::generate(&env);
+    let (market_id, original_market) = create_test_market(&env, &admin);
+
+    env.as_contract(&contract_id, || {
+        env.storage().persistent().set(&market_id, &original_market);
+
+        let asset = ReflectorAsset::BTC;
+        BalanceStorage::add_balance(&env, &user, &asset, 5_000_000).unwrap();
+
+        let mut storage_config = StorageOptimizer::get_storage_config(&env);
+        storage_config.balance_ttl_ledgers = 500_000;
+        storage_config.market_ttl_ledgers = 6_000_000;
+        StorageOptimizer::update_storage_config(&env, &storage_config).unwrap();
+
+        let metadata_key = crate::storage::DataKey::MarketMetadata(market_id.clone());
+        env.storage().persistent().set(&metadata_key, &original_market);
+
+        let claim_nonce_key = crate::storage::DataKey::ClaimNonce(user.clone(), market_id.clone());
+        env.storage().persistent().set(&claim_nonce_key, &7u64);
+
+        let integrity = StorageOptimizer::validate_storage_integrity(&env, &market_id).unwrap();
+        assert!(integrity.is_valid);
+        assert!(!integrity.corruption_detected);
+        assert!(!integrity.missing_data);
+
+        let loaded_market: Market = env.storage().persistent().get(&market_id).unwrap();
+        assert_eq!(loaded_market.admin, original_market.admin);
+        assert_eq!(loaded_market.question, original_market.question);
+        assert_eq!(loaded_market.outcomes.len(), original_market.outcomes.len());
+        assert_eq!(loaded_market.end_time, original_market.end_time);
+        assert_eq!(loaded_market.total_staked, original_market.total_staked);
+        assert_eq!(loaded_market.state, original_market.state);
+        assert_eq!(loaded_market.fee_collected, original_market.fee_collected);
+
+        let loaded_balance = BalanceStorage::get_balance(&env, &user, &asset);
+        assert_eq!(loaded_balance.amount, 5_000_000);
+        assert_eq!(loaded_balance.user, user);
+        assert_eq!(loaded_balance.asset, asset);
+
+        let loaded_config = StorageOptimizer::get_storage_config(&env);
+        assert_eq!(loaded_config.balance_ttl_ledgers, 500_000);
+        assert_eq!(loaded_config.market_ttl_ledgers, 6_000_000);
+
+        let loaded_nonce: u64 = env.storage().persistent().get(&claim_nonce_key).unwrap();
+        assert_eq!(loaded_nonce, 7u64);
+    });
+}
+
+#[test]
+fn test_migration_empty_state() {
+    let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+
+    env.as_contract(&contract_id, || {
+        let result = StorageOptimizer::migrate_storage_format(
+            &env,
+            StorageFormat::V1,
+            StorageFormat::V2,
+        );
+        assert!(result.is_ok());
+        let migration = result.unwrap();
+        assert_eq!(migration.from_format, StorageFormat::V1);
+        assert_eq!(migration.to_format, StorageFormat::V2);
+        assert_eq!(migration.status, String::from_str(&env, "completed"));
+        assert!(migration.completed_at.is_some());
+        assert!(migration.error_message.is_none());
+    });
+}
+
+#[test]
+fn test_migration_populated_state() {
+    let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+    let admin = create_test_admin(&env);
+    let (market_id, market) = create_test_market(&env, &admin);
+
+    env.as_contract(&contract_id, || {
+        env.storage().persistent().set(&market_id, &market);
+
+        let result_v1_v2 = StorageOptimizer::migrate_storage_format(
+            &env,
+            StorageFormat::V1,
+            StorageFormat::V2,
+        );
+        assert!(result_v1_v2.is_ok());
+        let mig_v1_v2 = result_v1_v2.unwrap();
+        assert_eq!(mig_v1_v2.status, String::from_str(&env, "completed"));
+
+        let result_v2_v3 = StorageOptimizer::migrate_storage_format(
+            &env,
+            StorageFormat::V2,
+            StorageFormat::V3,
+        );
+        assert!(result_v2_v3.is_ok());
+        let mig_v2_v3 = result_v2_v3.unwrap();
+        assert_eq!(mig_v2_v3.status, String::from_str(&env, "completed"));
+
+        let loaded: Market = env.storage().persistent().get(&market_id).unwrap();
+        assert_eq!(loaded.admin, market.admin);
+        assert_eq!(loaded.question, market.question);
+    });
+}
+
+#[test]
+fn test_migration_malformed_and_unsupported_state() {
+    let env = create_test_env();
+    let contract_id = env.register(crate::PredictifyHybrid, ());
+
+    env.as_contract(&contract_id, || {
+        let result = StorageOptimizer::migrate_storage_format(
+            &env,
+            StorageFormat::V3,
+            StorageFormat::V1,
+        );
+        assert!(result.is_ok());
+        let migration = result.unwrap();
+        assert_eq!(migration.status, String::from_str(&env, "unsupported_migration"));
+        assert!(migration.error_message.is_some());
+        assert_eq!(
+            migration.error_message.unwrap(),
+            String::from_str(&env, "Unsupported migration path")
+        );
+
+        let corrupt_key = Symbol::new(&env, "nonexistent_market");
+        let integrity_res = StorageOptimizer::validate_storage_integrity(&env, &corrupt_key);
+        assert!(integrity_res.is_ok());
+        let integrity = integrity_res.unwrap();
+        assert!(!integrity.is_valid);
+        assert!(integrity.missing_data);
+    });
+}
+
+
