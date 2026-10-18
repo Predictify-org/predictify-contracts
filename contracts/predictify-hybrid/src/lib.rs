@@ -393,8 +393,7 @@ impl PredictifyHybrid {
 
         // Seed permissive-but-valid rate limits so admin entrypoints do not
         // fail before a custom policy is configured.
-        match crate::rate_limiter::RateLimiter::new(env.clone()).init_rate_limiter(
-            admin.clone(),
+        match crate::rate_limiter::RateLimiter::new(env.clone()).init_rate_limiter_no_auth(
             crate::rate_limiter::RateLimitConfig {
                 voting_limit: 10_000,
                 dispute_limit: 1_000,
@@ -1350,6 +1349,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn place_bets(
         env: Env,
         user: Address,
@@ -1527,6 +1527,7 @@ impl PredictifyHybrid {
     /// - `Error::MarketNotFound` - Market does not exist
     /// - `Error::MarketClosed` - Market deadline has passed
     /// - `Error::InvalidState` - Bet is not in Active status
+    #[cfg(feature = "full")]
     pub fn cancel_bet(env: Env, user: Address, market_id: Symbol) -> Result<(), Error> {
         bets::BetManager::cancel_bet(&env, user, market_id)
     }
@@ -1627,6 +1628,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn calculate_bet_payout(env: Env, market_id: Symbol, user: Address) -> Result<i128, Error> {
         bets::BetManager::calculate_bet_payout(&env, &market_id, &user)
     }
@@ -1669,6 +1671,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_implied_probability(env: Env, market_id: Symbol, outcome: String) -> i128 {
         bets::BetAnalytics::calculate_implied_probability(&env, &market_id, &outcome)
     }
@@ -1712,6 +1715,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_payout_multiplier(env: Env, market_id: Symbol, outcome: String) -> i128 {
         bets::BetAnalytics::calculate_payout_multiplier(&env, &market_id, &outcome)
     }
@@ -1955,6 +1959,7 @@ impl PredictifyHybrid {
     /// per market. After expiry, claims revert with `Error::ResolutionTimeoutReached`.
     /// Set governance-controlled minimum bet size in basis points of the market token.
     /// admin-only. 1 bps = 0.01%. Stored as a u32 (0..=10000).
+    #[cfg(feature = "full")]
     pub fn set_governance_min_bet_bps(env: Env, admin: Address, min_bet_bps: u32) {
         admin.require_auth();
         if min_bet_bps > 10_000 {
@@ -1974,6 +1979,7 @@ impl PredictifyHybrid {
     }
 
     /// Get the governance-set minimum bet bps (0 = not set).
+    #[cfg(feature = "full")]
     pub fn get_governance_min_bet_bps(env: Env) -> u32 {
         env.storage()
             .instance()
@@ -1981,6 +1987,7 @@ impl PredictifyHybrid {
             .unwrap_or(0u32)
     }
 
+    #[cfg(feature = "full")]
     pub fn set_global_claim_period(env: Env, admin: Address, claim_period_seconds: u64) {
         admin.require_auth();
 
@@ -2005,6 +2012,7 @@ impl PredictifyHybrid {
     /// Set a market-specific claim period override (admin only).
     ///
     /// The market-specific value overrides the global claim period for the given market.
+    #[cfg(feature = "full")]
     pub fn set_market_claim_period(
         env: Env,
         admin: Address,
@@ -2053,6 +2061,7 @@ impl PredictifyHybrid {
     ///
     /// The treasury address will only change after the configured timelock
     /// period has elapsed (default: 24 hours).
+    #[cfg(feature = "full")]
     pub fn set_treasury(env: Env, admin: Address, treasury: Address) {
         admin.require_auth();
 
@@ -2084,6 +2093,7 @@ impl PredictifyHybrid {
     /// The treasury address will only change after the configured timelock
     /// period (default: 24 hours) has elapsed. This prevents surprise
     /// fee-recipient rotation.
+    #[cfg(feature = "full")]
     pub fn queue_treasury_update(
         env: Env,
         admin: Address,
@@ -2096,28 +2106,33 @@ impl PredictifyHybrid {
     /// Apply the queued treasury update after the timelock has expired.
     ///
     /// Can be called by the admin once the timelock period has elapsed.
+    #[cfg(feature = "full")]
     pub fn apply_treasury_update(env: Env, admin: Address) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
         recovery::TreasuryTimelockManager::apply_update(&env, &admin)
     }
 
     /// Cancel a pending treasury update before the timelock expires (admin only).
+    #[cfg(feature = "full")]
     pub fn cancel_treasury_update(env: Env, admin: Address) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
         recovery::TreasuryTimelockManager::cancel_update(&env, &admin)
     }
 
     /// Get the pending treasury update, if any (read-only query).
+    #[cfg(feature = "full")]
     pub fn get_pending_treasury_update(env: Env) -> Option<recovery::PendingTreasuryUpdate> {
         recovery::TreasuryTimelockManager::get_pending_update(&env)
     }
 
     /// Get the treasury timelock configuration (read-only query).
+    #[cfg(feature = "full")]
     pub fn get_treasury_timelock_config(env: Env) -> recovery::TreasuryTimelockConfig {
         recovery::TreasuryTimelockConfig::get_config(&env)
     }
 
     /// Set the treasury timelock delay (admin only).
+    #[cfg(feature = "full")]
     pub fn set_treasury_timelock_config(
         env: Env,
         admin: Address,
@@ -2131,6 +2146,7 @@ impl PredictifyHybrid {
     ///
     /// If `burn` is true, swept funds are burned (no recipient balance credited).
     /// If `burn` is false, swept funds are credited to the configured treasury.
+    #[cfg(feature = "full")]
     pub fn sweep_unclaimed_winnings(
         env: Env,
         admin: Address,
@@ -2388,6 +2404,7 @@ impl PredictifyHybrid {
     ///
     /// The current nonce (0 on first claim, incrementing by 1 on each subsequent claim).
     /// Clients should provide this exact value as the `claim_nonce` parameter to `claim_winnings`.
+    #[cfg(feature = "full")]
     pub fn get_claim_nonce(env: Env, user: Address, market_id: Symbol) -> u64 {
         storage::ClaimNonceManager::get_nonce(&env, &user, &market_id)
     }
@@ -2398,6 +2415,7 @@ impl PredictifyHybrid {
     /// This helper returns `false` when the market is missing, when `expected` does not
     /// match the commitment stored at creation/update time, or when any committed field
     /// in storage was changed without refreshing the stored commitment.
+    #[cfg(feature = "full")]
     pub fn verify_market_metadata(env: Env, market_id: Symbol, expected: BytesN<32>) -> bool {
         let market: Option<Market> = env.storage().persistent().get(&market_id);
         match market {
@@ -2492,6 +2510,7 @@ impl PredictifyHybrid {
     }
 
     /// Sets the cooldown period for resolution admin actions.
+    #[cfg(feature = "full")]
     pub fn set_resolution_cooldown(env: Env, admin: Address, seconds: u64) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
         let key = DataKey::ResolutionCooldownSeconds;
@@ -2667,6 +2686,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn resolve_market_with_ties(
         env: Env,
         admin: Address,
@@ -2806,6 +2826,7 @@ impl PredictifyHybrid {
     ///
     /// On first invocation emits a `ForceResolvedEvent` (topic `frc_rs`) and a state-change
     /// event. Repeated calls with the same `idempotency_key` are rejected as replays.
+    #[cfg(feature = "full")]
     pub fn force_resolve_market(
         env: Env,
         admin: Address,
@@ -3011,6 +3032,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn fetch_oracle_result(
         env: Env,
         market_id: Symbol,
@@ -3185,6 +3207,7 @@ impl PredictifyHybrid {
     /// - Result must not already be verified
     /// - At least one active oracle source must be available
     #[deprecated(note = "Use fetch_oracle_result instead. This legacy stub will be removed in a future version.")]
+    #[cfg(feature = "full")]
     pub fn verify_result(
         env: Env,
         caller: Address,
@@ -3248,6 +3271,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn verify_result_with_retry(
         env: Env,
         caller: Address,
@@ -3307,6 +3331,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_verified_result(env: Env, market_id: Symbol) -> Option<OracleResult> {
         // Temporarily disabled due to oracles module being disabled
         // oracles::OracleIntegrationManager::get_oracle_result(&env, &market_id)
@@ -3331,6 +3356,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn is_result_verified(env: Env, market_id: Symbol) -> bool {
         // Temporarily disabled due to oracles module being disabled
         // oracles::OracleIntegrationManager::is_result_verified(&env, &market_id)
@@ -3374,6 +3400,7 @@ impl PredictifyHybrid {
     /// Set the minimum oracle price-confidence threshold in basis points.
     /// Prices from oracles with confidence ratio above this threshold are rejected.
     /// `min_confidence_bps` = 0 disables the check.
+    #[cfg(feature = "full")]
     pub fn set_oracle_confidence_threshold(env: Env, admin: Address, min_confidence_bps: u32) {
         admin.require_auth();
         if min_confidence_bps > 10_000 {
@@ -3385,6 +3412,7 @@ impl PredictifyHybrid {
     }
 
     /// Get the configured oracle confidence threshold in bps (0 = disabled).
+    #[cfg(feature = "full")]
     pub fn get_oracle_confidence_threshold(env: Env) -> u32 {
         env.storage()
             .instance()
@@ -3393,6 +3421,7 @@ impl PredictifyHybrid {
     }
 
     /// Set configurable weight for a specific oracle source
+    #[cfg(feature = "full")]
     pub fn set_oracle_weight(
         env: Env,
         admin: Address,
@@ -3404,10 +3433,12 @@ impl PredictifyHybrid {
     }
 
     /// Get configured weight for an oracle source, defaults to 1
+    #[cfg(feature = "full")]
     pub fn get_oracle_weight(env: Env, oracle: Address) -> u32 {
         crate::oracles::OracleIntegrationManager::get_oracle_weight(&env, &oracle)
     }
 
+    #[cfg(feature = "full")]
     pub fn admin_override_verification(
         env: Env,
         admin: Address,
@@ -3616,6 +3647,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Emits `("depr_reg", entrypoint)` on success.
+    #[cfg(feature = "full")]
     pub fn register_deprecated(
         env: Env,
         admin: Address,
@@ -3646,6 +3678,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Emits `("depr_rem", entrypoint)` when an entry is actually removed.
+    #[cfg(feature = "full")]
     pub fn remove_deprecated(
         env: Env,
         admin: Address,
@@ -3663,6 +3696,7 @@ impl PredictifyHybrid {
     ///
     /// * `env`        – Soroban environment.
     /// * `entrypoint` – Name of the entrypoint to look up.
+    #[cfg(feature = "full")]
     pub fn get_deprecated_entry(env: Env, entrypoint: Symbol) -> Option<DeprecatedEntry> {
         DeprecatedRegistry::get_entry(&env, &entrypoint)
     }
@@ -3675,6 +3709,7 @@ impl PredictifyHybrid {
     /// # Parameters
     ///
     /// * `env` – Soroban environment.
+    #[cfg(feature = "full")]
     pub fn list_deprecated_entries(env: Env) -> Vec<DeprecatedEntry> {
         DeprecatedRegistry::list_entries(&env)
     }
@@ -3686,6 +3721,7 @@ impl PredictifyHybrid {
     /// # Parameters
     ///
     /// * `env` – Soroban environment.
+    #[cfg(feature = "full")]
     pub fn deprecated_entry_count(env: Env) -> u32 {
         DeprecatedRegistry::entry_count(&env)
     }
@@ -3698,6 +3734,7 @@ impl PredictifyHybrid {
     ///
     /// * `env`        – Soroban environment.
     /// * `entrypoint` – Name of the entrypoint to check.
+    #[cfg(feature = "full")]
     pub fn is_deprecated(env: Env, entrypoint: Symbol) -> bool {
         DeprecatedRegistry::is_deprecated(&env, &entrypoint)
     }
@@ -3782,6 +3819,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_resolution_analytics(env: Env) -> Result<resolution::MarketResolutionAnalytics, Error> {
         resolution::MarketResolutionAnalytics::calculate_resolution_analytics(&env)
     }
@@ -3873,6 +3911,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_market_analytics(
         env: Env,
         market_id: Symbol,
@@ -3891,6 +3930,7 @@ impl PredictifyHybrid {
     ///
     /// The payload is encoded with Soroban XDR so off-chain analytics services can
     /// persist a stable byte stream without relying on host-side ordering.
+    #[cfg(feature = "full")]
     pub fn get_market_analytics_snapshot(
         env: Env,
         market_id: Symbol,
@@ -3946,6 +3986,7 @@ impl PredictifyHybrid {
     }
 
     /// Set the dispute stake cap for a user in a market (governance/admin only)
+    #[cfg(feature = "full")]
     pub fn set_dispute_stake_cap(
         env: Env,
         admin: Address,
@@ -3961,6 +4002,7 @@ impl PredictifyHybrid {
     }
 
     /// Get the dispute stake cap for a user in a market
+    #[cfg(feature = "full")]
     pub fn get_dispute_stake_cap(
         env: Env,
         market_id: Symbol,
@@ -3991,6 +4033,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Emits `dispute_cumulative_stake_cap_set` event on success.
+    #[cfg(feature = "full")]
     pub fn set_dispute_cumulative_stake_cap(
         env: Env,
         admin: Address,
@@ -4007,6 +4050,7 @@ impl PredictifyHybrid {
     /// Get the per-user cumulative dispute stake cap.
     ///
     /// Returns 0 if no cap is set (cap is disabled).
+    #[cfg(feature = "full")]
     pub fn get_dispute_cumulative_stake_cap(env: Env, user: Address) -> i128 {
         disputes::DisputeManager::get_dispute_cumulative_stake_cap(&env, &user)
     }
@@ -4020,6 +4064,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn vote_on_dispute(
         env: Env,
         user: Address,
@@ -4061,6 +4106,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn resolve_dispute(
         env: Env,
         admin: Address,
@@ -4084,6 +4130,7 @@ impl PredictifyHybrid {
     }
 
     /// Sets the maximum capacity of resolved/expired disputes to retain in history (admin only).
+    #[cfg(feature = "full")]
     pub fn set_history_cap(
         env: Env,
         admin: Address,
@@ -4095,6 +4142,7 @@ impl PredictifyHybrid {
     }
 
     /// Sets the global anti-grief minimum stake floor (admin only).
+    #[cfg(feature = "full")]
     pub fn set_anti_grief_floor(
         env: Env,
         admin: Address,
@@ -4175,6 +4223,7 @@ impl PredictifyHybrid {
     ///     // entry.index, entry.action, entry.actor, entry.timestamp, entry.details
     /// }
     /// ```
+    #[cfg(feature = "full")]
     pub fn get_market_audit_log(
         env: Env,
         market_id: Symbol,
@@ -4195,6 +4244,7 @@ impl PredictifyHybrid {
     ///
     /// `Some(MarketAuditEntry)` when found; `None` when `index` is 0, out of range,
     /// or the market has no entries.
+    #[cfg(feature = "full")]
     pub fn get_market_audit_entry(
         env: Env,
         market_id: Symbol,
@@ -4216,6 +4266,7 @@ impl PredictifyHybrid {
     /// # Returns
     ///
     /// `Some(MarketAuditHead)` when the market has at least one entry; `None` otherwise.
+    #[cfg(feature = "full")]
     pub fn get_market_audit_head(
         env: Env,
         market_id: Symbol,
@@ -4532,6 +4583,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn archive_event(env: Env, admin: Address, market_id: Symbol) -> Result<(), Error> {
         crate::event_archive::EventArchive::archive_event(&env, &admin, &market_id)
     }
@@ -4542,11 +4594,13 @@ impl PredictifyHybrid {
     ///
     /// # Errors
     /// * `Unauthorized` - Caller is not admin
+    #[cfg(feature = "full")]
     pub fn prune_archive(env: Env, admin: Address, count: u32, cursor: Option<crate::event_archive::PruneCursor>) -> Result<(u32, crate::event_archive::PruneCursor), Error> {
         crate::event_archive::EventArchive::prune_archive(&env, &admin, count, cursor)
     }
 
     /// Return the current number of entries in the event archive.
+    #[cfg(feature = "full")]
     pub fn archive_size(env: Env) -> u32 {
         crate::event_archive::EventArchive::archive_size(&env)
     }
@@ -4561,6 +4615,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn query_events_history(
         env: Env,
         from_ts: u64,
@@ -4582,6 +4637,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn query_events_by_status(
         env: Env,
         status: MarketState,
@@ -4602,6 +4658,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn query_events_by_category(
         env: Env,
         category: String,
@@ -4628,6 +4685,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn query_archived_events(
         env: Env,
         reverse: bool,
@@ -4712,11 +4770,13 @@ impl PredictifyHybrid {
     }
 
     /// Commit a hash of the new fee configuration (admin only)
+    #[cfg(feature = "full")]
     pub fn commit_fee_config(env: Env, admin: Address, hash: BytesN<32>) -> Result<(), Error> {
         fees::FeeManager::commit_fee_config(&env, admin, hash)
     }
 
     /// Reveal and apply a committed fee configuration (admin only)
+    #[cfg(feature = "full")]
     pub fn reveal_fee_config(env: Env, admin: Address, new_config: fees::FeeConfig) -> Result<fees::FeeConfig, Error> {
         fees::FeeManager::update_fee_config(&env, admin, new_config)
     }
@@ -4732,6 +4792,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn set_global_bet_limits(
         env: Env,
         admin: Address,
@@ -4765,6 +4826,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn set_event_bet_limits(
         env: Env,
         admin: Address,
@@ -4788,6 +4850,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_effective_bet_limits(env: Env, market_id: Symbol) -> BetLimits {
         crate::bets::get_effective_bet_limits(&env, &market_id)
     }
@@ -4817,6 +4880,7 @@ impl PredictifyHybrid {
     ///
     /// Emits a `bet_limits_updated` event scoped to `market_id` so that indexers
     /// can track cap changes.
+    #[cfg(feature = "full")]
     pub fn set_market_max_bet_cap(
         env: Env,
         admin: Address,
@@ -4849,6 +4913,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_market_max_bet_cap(env: Env, market_id: Symbol) -> Option<i128> {
         crate::bets::get_market_max_bet_cap(&env, &market_id)
     }
@@ -4865,6 +4930,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Emits a `bet_limits_updated` event with `max_bet = 0` to signal removal.
+    #[cfg(feature = "full")]
     pub fn remove_market_max_bet_cap(
         env: Env,
         admin: Address,
@@ -4876,6 +4942,7 @@ impl PredictifyHybrid {
         Ok(())
     }
 
+    #[cfg(feature = "full")]
     pub fn set_max_participants(
         env: Env,
         admin: Address,
@@ -4906,6 +4973,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn set_oracle_val_cfg_global(
         env: Env,
         admin: Address,
@@ -4948,6 +5016,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn set_oracle_val_cfg_event(
         env: Env,
         admin: Address,
@@ -4995,6 +5064,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_oracle_val_cfg_effective(
         env: Env,
         market_id: Symbol,
@@ -5048,6 +5118,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn withdraw_collected_fees(env: Env, admin: Address, amount: i128) -> Result<i128, Error> {
         Self::require_primary_admin(&env, &admin)?;
 
@@ -5124,6 +5195,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn extend_deadline(
         env: Env,
         admin: Address,
@@ -5223,6 +5295,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn update_event_description(
         env: Env,
         admin: Address,
@@ -5371,6 +5444,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn update_event_outcomes(
         env: Env,
         admin: Address,
@@ -5499,6 +5573,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn update_event_category(
         env: Env,
         admin: Address,
@@ -5621,6 +5696,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn update_event_tags(
         env: Env,
         admin: Address,
@@ -5701,6 +5777,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn query_events_by_tags(
         env: Env,
         tags: Vec<String>,
@@ -5762,6 +5839,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Read-only; no events emitted.
+    #[cfg(feature = "full")]
     pub fn query_user_bets_paged(
         env: Env,
         user: Address,
@@ -5795,6 +5873,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Read-only; no events emitted.
+    #[cfg(feature = "full")]
     pub fn query_contract_state_paged(
         env: Env,
         cursor: u32,
@@ -5963,6 +6042,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn refund_on_oracle_failure(
         env: Env,
         caller: Address,
@@ -6027,6 +6107,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn extend_market(
         env: Env,
         admin: Address,
@@ -6056,6 +6137,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Emits no events; purely a configuration write.
+    #[cfg(feature = "full")]
     pub fn set_cumulative_extension_cap(
         env: Env,
         admin: Address,
@@ -6077,6 +6159,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_cumulative_extension_total(env: Env, market_id: Symbol) -> Result<u32, Error> {
         let key = crate::storage::DataKey::MarketExtensionTotal(market_id);
         Ok(env.storage().persistent().get(&key).unwrap_or(0u32))
@@ -6093,6 +6176,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn compress_market_data(
         env: Env,
         market_id: Symbol,
@@ -6114,6 +6198,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn cleanup_old_market_data(env: Env, market_id: Symbol) -> Result<bool, Error> {
         storage::StorageOptimizer::cleanup_old_market_data(&env, &market_id)
     }
@@ -6127,6 +6212,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn migrate_storage_format(
         env: Env,
         from_format: storage::StorageFormat,
@@ -6167,6 +6253,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn recovery_dry_run(
         env: Env,
         market_id: Symbol,
@@ -6183,6 +6270,7 @@ impl PredictifyHybrid {
     /// # Errors
     ///
     /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    #[cfg(feature = "full")]
     pub fn promote_market_to_persistent(
         env: Env,
         market_id: Symbol,
@@ -6195,6 +6283,7 @@ impl PredictifyHybrid {
     /// # Errors
     ///
     /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    #[cfg(feature = "full")]
     pub fn demote_scratch_keys(
         env: Env,
         market_id: Symbol,
@@ -6211,6 +6300,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn monitor_storage_usage(env: Env) -> Result<storage::StorageUsageStats, Error> {
         storage::StorageOptimizer::monitor_storage_usage(&env)
     }
@@ -6224,6 +6314,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn optimize_storage_layout(env: Env, market_id: Symbol) -> Result<bool, Error> {
         storage::StorageOptimizer::optimize_storage_layout(&env, &market_id)
     }
@@ -6237,6 +6328,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_storage_usage_statistics(env: Env) -> Result<storage::StorageUsageStats, Error> {
         storage::StorageOptimizer::get_storage_usage_statistics(&env)
     }
@@ -6250,6 +6342,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn validate_storage_integrity(
         env: Env,
         market_id: Symbol,
@@ -6266,6 +6359,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_storage_config(env: Env) -> storage::StorageConfig {
         storage::StorageOptimizer::get_storage_config(&env)
     }
@@ -6279,6 +6373,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn update_storage_config(env: Env, config: storage::StorageConfig) -> Result<(), Error> {
         storage::StorageOptimizer::update_storage_config(&env, &config)
     }
@@ -6292,6 +6387,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn calculate_storage_cost(env: Env, market_id: Symbol) -> Result<u64, Error> {
         let market = match markets::MarketStateManager::get_market(&env, &market_id) {
             Ok(m) => m,
@@ -6310,6 +6406,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_storage_efficiency_score(env: Env, market_id: Symbol) -> Result<u32, Error> {
         let market = match markets::MarketStateManager::get_market(&env, &market_id) {
             Ok(m) => m,
@@ -6328,6 +6425,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_storage_recommendations(env: Env, market_id: Symbol) -> Result<Vec<String>, Error> {
         let market = match markets::MarketStateManager::get_market(&env, &market_id) {
             Ok(m) => m,
@@ -6348,6 +6446,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn recover_from_error(
         env: Env,
         error: Error,
@@ -6365,6 +6464,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn validate_error_recovery(
         env: Env,
         recovery: errors::ErrorRecovery,
@@ -6381,6 +6481,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_error_recovery_status(env: Env) -> Result<errors::ErrorRecoveryStatus, Error> {
         errors::ErrorHandler::get_error_recovery_status(&env)
     }
@@ -6394,6 +6495,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn emit_error_recovery_event(env: Env, recovery: errors::ErrorRecovery) {
         errors::ErrorHandler::emit_error_recovery_event(&env, &recovery);
     }
@@ -6407,6 +6509,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn validate_resilience_patterns(
         env: Env,
         patterns: Vec<errors::ResiliencePattern>,
@@ -6423,6 +6526,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn document_error_recovery(env: Env) -> Result<soroban_sdk::Map<String, String>, Error> {
         errors::ErrorHandler::document_error_recovery_procedures(&env)
     }
@@ -6438,6 +6542,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn handle_zero_stake_scenario(env: Env, market_id: Symbol) -> Result<(), Error> {
         edge_cases::EdgeCaseHandler::handle_zero_stake_scenario(&env, market_id)
     }
@@ -6451,6 +6556,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn implement_tie_breaking_mechanism(
         env: Env,
         outcomes: Vec<String>,
@@ -6467,6 +6573,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn detect_orphaned_markets(env: Env) -> Result<Vec<Symbol>, Error> {
         edge_cases::EdgeCaseHandler::detect_orphaned_markets(&env)
     }
@@ -6480,6 +6587,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn handle_partial_resolution(
         env: Env,
         market_id: Symbol,
@@ -6497,6 +6605,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn validate_edge_case_handling(
         env: Env,
         scenario: edge_cases::EdgeCaseScenario,
@@ -6513,6 +6622,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn test_edge_case_scenarios(env: Env) -> Result<(), Error> {
         edge_cases::EdgeCaseHandler::test_edge_case_scenarios(&env)
     }
@@ -6526,6 +6636,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_edge_case_statistics(env: Env) -> Result<edge_cases::EdgeCaseStats, Error> {
         edge_cases::EdgeCaseHandler::get_edge_case_statistics(&env)
     }
@@ -6540,6 +6651,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn recover_market_state(env: Env, admin: Address, market_id: Symbol) -> bool {
         admin.require_auth();
         if let Err(e) = crate::recovery::RecoveryManager::assert_is_admin(&env, &admin) {
@@ -6572,6 +6684,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn partial_refund_mechanism(
         env: Env,
         admin: Address,
@@ -6606,6 +6719,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn validate_market_state_integrity(env: Env, market_id: Symbol) -> bool {
         match crate::recovery::RecoveryValidator::validate_market_state_integrity(&env, &market_id)
         {
@@ -6623,6 +6737,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_recovery_status(env: Env, market_id: Symbol) -> String {
         crate::recovery::RecoveryManager::get_recovery_status(&env, &market_id)
             .unwrap_or_else(|_| String::from_str(&env, "unknown"))
@@ -6634,6 +6749,7 @@ impl PredictifyHybrid {
     ///
     /// # Errors
     /// * `Unauthorized` - Caller is not admin
+    #[cfg(feature = "full")]
     pub fn prune_recovery_history(
         env: Env,
         admin: Address,
@@ -6661,6 +6777,7 @@ impl PredictifyHybrid {
     /// * `RecoveryAlreadyPending` - A recovery is already pending for this market
     /// * `MarketNotRecoverable` - Market is in a non-recoverable state
     /// * `InvalidRecoveryAction` - Action is invalid for the market's current state
+    #[cfg(feature = "full")]
     pub fn initiate_market_recovery(
         env: Env,
         admin: Address,
@@ -6703,6 +6820,7 @@ impl PredictifyHybrid {
     /// # Errors
     /// * `RecoveryRequestNotFound` - No pending request for this market
     /// * `RecoveryTimelockActive` - The timelock has not yet expired
+    #[cfg(feature = "full")]
     pub fn execute_market_recovery(env: Env, admin: Address, market_id: Symbol) -> bool {
         Self::require_primary_admin_or_panic(&env, &admin);
 
@@ -6733,6 +6851,7 @@ impl PredictifyHybrid {
     ///
     /// # Errors
     /// * `RecoveryRequestNotFound` - No pending request for this market
+    #[cfg(feature = "full")]
     pub fn cancel_market_recovery(env: Env, admin: Address, market_id: Symbol) {
         Self::require_primary_admin_or_panic(&env, &admin);
 
@@ -6757,6 +6876,7 @@ impl PredictifyHybrid {
     /// Returns the pending recovery request for a market, if any.
     ///
     /// Read-only query; no authentication required.
+    #[cfg(feature = "full")]
     pub fn get_pending_market_recovery(
         env: Env,
         market_id: Symbol,
@@ -6767,6 +6887,7 @@ impl PredictifyHybrid {
     /// Returns the current recovery timelock configuration.
     ///
     /// Read-only query; no authentication required.
+    #[cfg(feature = "full")]
     pub fn get_recovery_timelock_config(env: Env) -> crate::recovery::RecoveryTimelockConfig {
         crate::recovery::RecoveryTimelockConfig::get_config(&env)
     }
@@ -6782,6 +6903,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn track_contract_version(env: Env, version: versioning::Version) -> Result<(), Error> {
         versioning::VersionManager::new(&env).track_contract_version(&env, version)
     }
@@ -6795,6 +6917,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn migrate_data_between_versions(
         env: Env,
         old_version: versioning::Version,
@@ -6816,6 +6939,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn validate_version_compatibility(
         env: Env,
         old_version: versioning::Version,
@@ -6837,6 +6961,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn upgrade_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
         versioning::VersionManager::new(&env).upgrade_to_version(&env, target_version)
     }
@@ -6850,6 +6975,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn rollback_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
         versioning::VersionManager::new(&env).rollback_to_version(&env, target_version)
     }
@@ -6863,6 +6989,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_version_history(env: Env) -> Result<versioning::VersionHistory, Error> {
         versioning::VersionManager::new(&env).get_version_history(&env)
     }
@@ -6876,6 +7003,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn test_version_migration(
         env: Env,
         migration: versioning::VersionMigration,
@@ -6894,6 +7022,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn monitor_market_health(
         env: Env,
         market_id: Symbol,
@@ -6910,6 +7039,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn monitor_oracle_health(
         env: Env,
         oracle: OracleProvider,
@@ -6926,6 +7056,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn monitor_fee_collection(
         env: Env,
         timeframe: monitoring::TimeFrame,
@@ -6942,6 +7073,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn monitor_dispute_resolution(
         env: Env,
         market_id: Symbol,
@@ -6958,6 +7090,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_contract_performance_metrics(
         env: Env,
         timeframe: monitoring::TimeFrame,
@@ -6974,6 +7107,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn emit_monitoring_alert(
         env: Env,
         alert: monitoring::MonitoringAlert,
@@ -6990,6 +7124,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn validate_monitoring_data(
         env: Env,
         data: monitoring::MonitoringData,
@@ -7001,12 +7136,14 @@ impl PredictifyHybrid {
     ///
     /// Clients should also check [`is_monitor_overflow`] to detect whether any
     /// alerts were silently evicted since the last admin reset.
+    #[cfg(feature = "full")]
     pub fn get_monitor_alerts(env: Env) -> Vec<monitoring::MonitoringAlert> {
         monitoring::ContractMonitor::get_alerts(&env)
     }
 
     /// Return `true` if at least one alert has been evicted from the queue due to
     /// overflow since the last [`clear_monitor_overflow`] call.
+    #[cfg(feature = "full")]
     pub fn is_monitor_overflow(env: Env) -> bool {
         monitoring::ContractMonitor::is_overflow(&env)
     }
@@ -7021,6 +7158,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn clear_monitor_overflow(env: Env, admin: Address) -> Result<(), Error> {
         monitoring::ContractMonitor::clear_overflow(&env, &admin)
     }
@@ -7040,6 +7178,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_oracle_with_backup(
         env: Env,
         market_id: Symbol,
@@ -7112,6 +7251,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn check_oracle_status(
         env: Env,
         oracle: OracleProvider,
@@ -7140,6 +7280,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn add_admin(
         env: Env,
         current_admin: Address,
@@ -7163,6 +7304,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn remove_admin(
         env: Env,
         current_admin: Address,
@@ -7185,6 +7327,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn update_admin_role(
         env: Env,
         current_admin: Address,
@@ -7207,6 +7350,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn validate_admin_permission(
         env: Env,
         admin: Address,
@@ -7225,6 +7369,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_admin_roles(env: Env) -> Map<Address, AdminRole> {
         AdminManager::get_admin_roles(&env)
     }
@@ -7238,6 +7383,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_admin_analytics(env: Env) -> AdminAnalyticsResult {
         admin::EnhancedAdminAnalytics::get_admin_analytics(&env)
     }
@@ -7254,6 +7400,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn migrate_to_multi_admin(env: Env, admin: Address) -> Result<(), Error> {
         Self::require_primary_admin(&env, &admin)?;
         admin::AdminSystemIntegration::migrate_to_multi_admin(&env)
@@ -7268,6 +7415,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn is_multi_admin_migrated(env: Env) -> bool {
         admin::AdminSystemIntegration::is_migrated(&env)
     }
@@ -7281,6 +7429,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn check_role_permissions(env: Env, role: AdminRole, permission: AdminPermission) -> bool {
         AdminManager::check_role_permissions(&env, role, permission)
     }
@@ -7343,6 +7492,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn upgrade_contract(
         env: Env,
         admin: Address,
@@ -7369,6 +7519,7 @@ impl PredictifyHybrid {
     }
 
     /// Broadcasts an emergency notice to off-chain clients by emitting an AdminBroadcast event.
+    #[cfg(feature = "full")]
     pub fn admin_broadcast(
         env: Env,
         admin: Address,
@@ -7402,6 +7553,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn rollback_upgrade(
         env: Env,
         admin: Address,
@@ -7468,6 +7620,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn check_upgrade_available(env: Env) -> Result<bool, Error> {
         upgrade_manager::UpgradeManager::check_upgrade_available(&env)
     }
@@ -7487,6 +7640,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_upgrade_history(env: Env) -> Result<Vec<upgrade_manager::UpgradeRecord>, Error> {
         upgrade_manager::UpgradeManager::get_upgrade_history(&env)
     }
@@ -7506,6 +7660,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_upgrade_statistics(env: Env) -> Result<upgrade_manager::UpgradeStats, Error> {
         upgrade_manager::UpgradeManager::get_upgrade_statistics(&env)
     }
@@ -7531,6 +7686,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn validate_upgrade_compatibility(
         env: Env,
         proposal: upgrade_manager::UpgradeProposal,
@@ -7558,6 +7714,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn test_upgrade_safety(
         env: Env,
         proposal: upgrade_manager::UpgradeProposal,
@@ -7610,6 +7767,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_market_analytics_statistics(
         env: Env,
         market_id: Symbol,
@@ -7658,6 +7816,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_voting_analytics(
         env: Env,
         market_id: Symbol,
@@ -7706,6 +7865,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_oracle_performance_stats(
         env: Env,
         oracle: OracleProvider,
@@ -7753,6 +7913,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_fee_analytics(
         env: Env,
         timeframe: market_analytics::TimeFrame,
@@ -7801,6 +7962,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_dispute_analytics(
         env: Env,
         market_id: Symbol,
@@ -7850,6 +8012,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_participation_metrics(
         env: Env,
         market_id: Symbol,
@@ -7903,6 +8066,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_market_comparison_analytics(
         env: Env,
         markets: Vec<Symbol>,
@@ -7959,6 +8123,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn benchmark_gas_usage(
         env: Env,
         function: String,
@@ -8016,6 +8181,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn benchmark_storage_usage(
         env: Env,
         operation: performance_benchmarks::StorageOperation,
@@ -8068,6 +8234,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn benchmark_oracle_performance(
         env: Env,
         oracle: OracleProvider,
@@ -8126,6 +8293,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn benchmark_batch_operations(
         env: Env,
         operations: Vec<performance_benchmarks::BatchOperation>,
@@ -8177,6 +8345,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn benchmark_scalability(
         env: Env,
         market_size: u32,
@@ -8231,6 +8400,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn generate_performance_report(
         env: Env,
         benchmark_suite: performance_benchmarks::PerformanceBenchmarkSuite,
@@ -8283,6 +8453,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn validate_performance_thresholds(
         env: Env,
         metrics: performance_benchmarks::PerformanceMetrics,
@@ -8351,6 +8522,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Emits audit trail record of verification attempt (success or failure).
+    #[cfg(feature = "full")]
     pub fn re_verify_token(
         env: Env,
         admin: Address,
@@ -8386,6 +8558,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_platform_statistics(env: Env) -> PlatformStatistics {
         statistics::StatisticsManager::get_platform_stats(&env)
     }
@@ -8399,6 +8572,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
     pub fn get_user_statistics(env: Env, user: Address) -> UserStatistics {
         statistics::StatisticsManager::get_user_stats(&env, &user)
     }
@@ -8424,6 +8598,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// This is a read-only query; no events are emitted.
+    #[cfg(feature = "full")]
     pub fn get_dashboard_statistics(env: Env) -> Result<types::DashboardStatisticsV1, Error> {
         queries::QueryManager::get_dashboard_statistics(&env)
     }
@@ -8454,6 +8629,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Read-only query; no events emitted.
+    #[cfg(feature = "full")]
     pub fn get_market_statistics(
         env: Env,
         market_id: Symbol,
@@ -8482,6 +8658,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Read-only query; no events emitted.
+    #[cfg(feature = "full")]
     pub fn get_category_statistics(
         env: Env,
         category: String,
@@ -8510,6 +8687,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Read-only query; no events emitted.
+    #[cfg(feature = "full")]
     pub fn get_top_users_by_winnings(
         env: Env,
         limit: u32,
@@ -8534,6 +8712,7 @@ impl PredictifyHybrid {
     /// # Events
     ///
     /// Read-only query; no events emitted.
+    #[cfg(feature = "full")]
     pub fn get_top_users_by_win_rate(
         env: Env,
         limit: u32,
@@ -8554,6 +8733,7 @@ impl PredictifyHybrid {
     ///
     /// - `Error::Unauthorized` — caller is not an authorised admin.
     /// - `Error::CBError` — breaker is not currently `Open`.
+    #[cfg(feature = "full")]
     pub fn request_resume(env: Env, admin: Address) -> Result<(), Error> {
         admin.require_auth();
         crate::circuit_breaker::CircuitBreaker::request_resume(&env, &admin)
@@ -8568,12 +8748,14 @@ impl PredictifyHybrid {
     /// # Errors
     ///
     /// - `Error::ContractStateError` — market index is missing or corrupted.
+    #[cfg(feature = "full")]
     pub fn get_snapshot_envelope(env: Env) -> Result<reporting::SnapshotEnvelope, Error> {
         reporting::ReportingManager::get_snapshot_envelope(&env)
     }
 
     /// Accumulate dispute fees. Called after each dispute resolution to add
     /// `fee_amount` to the running cumulative total. Returns the new total.
+    #[cfg(feature = "full")]
     pub fn accumulate_dispute_fee(env: Env, caller: Address, fee_amount: i128) -> i128 {
         caller.require_auth();
         if fee_amount < 0 {
@@ -8588,6 +8770,7 @@ impl PredictifyHybrid {
     }
 
     /// Get the cumulative dispute fee total accumulated so far.
+    #[cfg(feature = "full")]
     pub fn get_cumulative_dispute_fee(env: Env) -> i128 {
         env.storage()
             .instance()

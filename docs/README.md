@@ -121,3 +121,10 @@ When adding new documentation:
 
 *Last updated: 2026-04-23*
 *For questions or suggestions about documentation, please open an issue in the repository.*
+
+
+## Project docs
+
+- [Deployments (testnet contract IDs)](./DEPLOYMENTS.md)
+- [Testing status](./TESTING.md)
+- [Design notes and implementation write-ups](./design/)

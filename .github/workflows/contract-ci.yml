@@ -19,3 +19,7 @@ jobs:
         run: cargo build -p predictify-hybrid
       - name: Test stable crates
         run: cargo test -p hello-world -p oracles
+      - name: Test predictify-hybrid
+        run: cargo test -p predictify-hybrid --lib
+      - name: Slim (deployable) feature set compiles
+        run: cargo check -p predictify-hybrid --no-default-features

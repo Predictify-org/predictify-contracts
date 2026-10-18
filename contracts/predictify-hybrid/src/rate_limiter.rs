@@ -99,6 +99,17 @@ impl RateLimiter {
         config: RateLimitConfig,
     ) -> Result<(), RateLimiterError> {
         admin.require_auth();
+        self.init_rate_limiter_no_auth(config)
+    }
+
+    /// Validate and store the rate-limit configuration without requiring
+    /// authorization. For callers that have already authorized the admin in the
+    /// current invocation (e.g. contract `initialize`): requiring auth for the
+    /// same address twice in one frame fails with `Auth, ExistingValue`.
+    pub(crate) fn init_rate_limiter_no_auth(
+        &self,
+        config: RateLimitConfig,
+    ) -> Result<(), RateLimiterError> {
         self.validate_rate_limit_configuration(&config)?;
         self.env
             .storage()

@@ -8,6 +8,12 @@ publish = false
 crate-type = ["lib", "cdylib"]
 doctest = false
 
+[features]
+# "full" exposes every contract entry point (default). Build with
+# --no-default-features for the slim build that fits the 128 KiB on-chain limit.
+default = ["full"]
+full = []
+
 [dependencies]
 wee_alloc = "0.4.5"
 ethnum = "1.5.3"
