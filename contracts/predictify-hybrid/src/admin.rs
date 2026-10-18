@@ -353,7 +353,7 @@ impl AdminInitializer {
             Environment::Mainnet => ConfigManager::get_mainnet_config(env),
             Environment::Custom => ConfigManager::get_development_config(env),
         };
-        ConfigManager::validate_config(env, &config)?;
+        crate::config::ConfigValidator::validate_contract_config(&config)?;
 
         // Initialize basic admin setup
         AdminInitializer::initialize(env, admin)?;
