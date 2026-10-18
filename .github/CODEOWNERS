@@ -1,0 +1,37 @@
+# Security-sensitive paths need maintainer review before merge.
+# Added after the PolinRider malware campaign, which hides payloads in editor
+# tasks, lifecycle scripts, build configs and fake font/binary files.
+
+/.vscode/             @greatest0fallt1me
+/.devcontainer/       @greatest0fallt1me
+/.github/             @greatest0fallt1me
+.gitignore            @greatest0fallt1me
+
+package.json          @greatest0fallt1me
+package-lock.json     @greatest0fallt1me
+pnpm-lock.yaml        @greatest0fallt1me
+yarn.lock             @greatest0fallt1me
+bun.lock              @greatest0fallt1me
+.npmrc                @greatest0fallt1me
+Cargo.toml            @greatest0fallt1me
+build.rs              @greatest0fallt1me
+
+*.config.js           @greatest0fallt1me
+*.config.cjs          @greatest0fallt1me
+*.config.mjs          @greatest0fallt1me
+*.config.ts           @greatest0fallt1me
+/dist/                @greatest0fallt1me
+
+*.woff                @greatest0fallt1me
+*.woff2               @greatest0fallt1me
+*.eot                 @greatest0fallt1me
+*.ttf                 @greatest0fallt1me
+*.otf                 @greatest0fallt1me
+*.llf                 @greatest0fallt1me
+*.bat                 @greatest0fallt1me
+*.cmd                 @greatest0fallt1me
+*.ps1                 @greatest0fallt1me
+*.exe                 @greatest0fallt1me
+*.dll                 @greatest0fallt1me
+*.so                  @greatest0fallt1me
+*.dylib               @greatest0fallt1me
