@@ -1964,15 +1964,16 @@ mod tests {
         assert!(BetValidator::validate_fee_slippage(&env, 200).is_ok());        });
     }
 
-    #[ignore]
     #[test]
     fn test_fee_slippage_guard_accepts_higher_fee() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let config = crate::config::ConfigManager::get_development_config(&env);
         ConfigManager::store_config(&env, &config).unwrap();
 
         // max_fee_bps higher than platform fee should pass
-        assert!(BetValidator::validate_fee_slippage(&env, 500).is_ok());
+        assert!(BetValidator::validate_fee_slippage(&env, 500).is_ok());        });
     }
 
     #[ignore]
