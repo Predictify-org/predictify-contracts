@@ -2384,9 +2384,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_validate_bet_amount_against_limits_uses_per_event() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let market_id = Symbol::new(&env, "mkt_lim");
         let per_event = BetLimits {
             min_bet: 5_000_000,
@@ -2407,7 +2408,7 @@ mod tests {
         assert_eq!(
             BetValidator::validate_bet_amount_against_limits(&env, &market_id, 30_000_000_000),
             Err(Error::InvalidInput)
-        );
+        );        });
     }
 
     #[test]
