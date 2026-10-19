@@ -4153,7 +4153,8 @@ impl PredictifyHybrid {
         admin: Address,
         floor: i128,
     ) -> Result<(), Error> {
-        Self::require_primary_admin(&env, &admin)?;
+        // The manager authenticates and validates the stored primary admin.
+        // A second require_auth in this frame traps during simulation.
 
         disputes::DisputeManager::set_anti_grief_floor(&env, admin, floor)
     }
