@@ -108,9 +108,12 @@ run passed 697 tests with 203 ignored; the after run passed 730 with 172 ignored
 | `cargo test -p predictify-hybrid --lib` | 730 passed, 172 ignored |
 | `cargo test -p predictify-hybrid --tests` | Library plus all 11 integration targets; 119 integration tests, none ignored |
 | `cargo test -p hello-world -p oracles` | 3 passed across stable-crate targets |
+| `cargo build -p predictify-hybrid` | Passed |
 | `cargo check -p predictify-hybrid --no-default-features` | Passed |
 | Ratchet at baseline | 174 / 174, exit 0 |
 | Temporary extra source `#[ignore]` | 175 / 174, exit 1; probe removed |
+| Inline `#[test] #[ignore]`, and two ignore attributes on one line | Both rejected (175 and 176 / 174); probes removed |
+| `bash -n scripts/check_ignored_tests.sh`; `git diff --check` | Passed |
 | Harness storage/client visibility and market/funding | Both new tests passed in the library run |
 
 ## Timing
@@ -123,8 +126,8 @@ step:
 | --- | ---: |
 | Existing library command (warm rerun) | 2.60 |
 | Added `cargo test -p predictify-hybrid --tests` step | 39.92 |
-| Added ignored-test ratchet | 0.28 |
-| Total added steps | 40.20 |
+| Added ignored-test ratchet | 0.41 |
+| Total added steps | 40.33 |
 
 The measured added workflow workload is about 40 seconds with warm artifacts.
 `--tests` includes a library rerun (~1.5 seconds of test execution). Its Cargo
