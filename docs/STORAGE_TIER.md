@@ -34,6 +34,12 @@ mainnet). Two further TTLs sit outside the tier enum:
 | `PLACE_BETS_IDEM_TTL_LEDGERS` | 120,960 | ~7 days | `PlaceBetsIdem` (temporary) |
 | `MARKET_CACHE_TTL_LEDGERS` | 100 | ~8 minutes | `MarketCache` (instance) |
 
+`StorageConfig::validate` requires each configured persistent TTL to be at
+least the value in the tier table above. It also rejects a zero
+`cleanup_threshold_days`; an admin may raise the cleanup age but cannot set it
+to zero and make fresh closed/cancelled markets immediately eligible for
+cleanup.
+
 ### Clamping
 
 Every persistent write routed through `set_persistent_with_ttl` /
