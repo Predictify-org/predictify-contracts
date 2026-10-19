@@ -1,5 +1,11 @@
 # Testing status
 
+After merging upstream master `d806a26` for PR #1470, the workspace is blocked by
+an incomplete upstream `predictify-analytics` package. See
+[the synchronization report](test-output/pr-1470-master-sync.md) for the errors
+and isolated hybrid validation. The #1463 results below describe validation
+before that merge; full-workspace checks must be repeated after analytics is repaired.
+
 ```sh
 cargo test -p predictify-hybrid --lib     # 730 passed, 0 failed, 172 ignored
 cargo test -p predictify-hybrid --lib bets::tests # 41 passed, none ignored
