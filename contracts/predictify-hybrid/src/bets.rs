@@ -2195,9 +2195,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_bet_analytics_implied_probability_with_data() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let market_id = Symbol::new(&env, "mkt_prob");
         let yes = String::from_str(&env, "yes");
         let no = String::from_str(&env, "no");
@@ -2220,7 +2221,7 @@ mod tests {
         assert_eq!(
             BetAnalytics::calculate_implied_probability(&env, &market_id, &no),
             25
-        );
+        );        });
     }
 
     #[test]
