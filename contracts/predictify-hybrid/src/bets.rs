@@ -2041,9 +2041,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_get_effective_bet_limits_prefers_per_event_over_global() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let market_id = Symbol::new(&env, "mkt_evt");
         let global = BetLimits {
             min_bet: 2_000_000,
@@ -2058,7 +2059,7 @@ mod tests {
 
         let limits = get_effective_bet_limits(&env, &market_id);
         assert_eq!(limits.min_bet, 5_000_000);
-        assert_eq!(limits.max_bet, 10_000_000_000);
+        assert_eq!(limits.max_bet, 10_000_000_000);        });
     }
 
     #[test]
