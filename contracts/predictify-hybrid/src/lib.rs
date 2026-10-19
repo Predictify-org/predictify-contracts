@@ -4115,7 +4115,8 @@ impl PredictifyHybrid {
         admin: Address,
         market_id: Symbol,
     ) -> Result<disputes::DisputeResolution, Error> {
-        Self::require_primary_admin(&env, &admin)?;
+        // The manager authenticates and validates the stored primary admin.
+        // A second require_auth in this frame traps during simulation.
 
         let result = disputes::DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone());
         if result.is_ok() {
