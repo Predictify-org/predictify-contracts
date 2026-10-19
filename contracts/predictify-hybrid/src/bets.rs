@@ -2299,9 +2299,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_bet_storage_remove_bet() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let user = Address::generate(&env);
         let market_id = Symbol::new(&env, "mkt_rm_bet");
         let outcome = String::from_str(&env, "no");
@@ -2311,7 +2312,7 @@ mod tests {
         assert!(BetStorage::get_bet(&env, &market_id, &user).is_some());
 
         BetStorage::remove_bet(&env, &market_id, &user);
-        assert!(BetStorage::get_bet(&env, &market_id, &user).is_none());
+        assert!(BetStorage::get_bet(&env, &market_id, &user).is_none());        });
     }
 
     #[test]
