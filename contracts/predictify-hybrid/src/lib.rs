@@ -2066,7 +2066,7 @@ impl PredictifyHybrid {
     /// period has elapsed (default: 24 hours).
     #[cfg(feature = "full")]
     pub fn set_treasury(env: Env, admin: Address, treasury: Address) {
-        admin.require_auth();
+        // queue_update authenticates the admin in this invocation frame.
 
         let stored_admin: Address = env
             .storage()
