@@ -1976,10 +1976,11 @@ mod tests {
         assert!(BetValidator::validate_fee_slippage(&env, 500).is_ok());        });
     }
 
-    #[ignore]
     #[test]
     fn test_fee_slippage_guard_rejects_lower_fee() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let config = crate::config::ConfigManager::get_development_config(&env);
         ConfigManager::store_config(&env, &config).unwrap();
 
@@ -1987,7 +1988,7 @@ mod tests {
         assert_eq!(
             BetValidator::validate_fee_slippage(&env, 100),
             Err(Error::FeeExceedsMax)
-        );
+        );        });
     }
 
     #[ignore]
