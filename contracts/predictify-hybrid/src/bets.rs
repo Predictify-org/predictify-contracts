@@ -2262,9 +2262,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_bet_analytics_get_market_summary_delegates() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let market_id = Symbol::new(&env, "mkt_sum");
         let stats = BetStats {
             total_bets: 5,
@@ -2277,7 +2278,7 @@ mod tests {
         let summary = BetAnalytics::get_market_summary(&env, &market_id);
         assert_eq!(summary.total_bets, 5);
         assert_eq!(summary.total_amount_locked, 50_000_000);
-        assert_eq!(summary.unique_bettors, 5);
+        assert_eq!(summary.unique_bettors, 5);        });
     }
 
     #[test]
