@@ -2496,9 +2496,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_atomic_user_stake_is_prepared_without_writing_storage() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let market_id = Symbol::new(&env, "mkt_usr");
         let user = Address::generate(&env);
         let key = crate::storage::DataKey::UserStake(user.clone(), market_id.clone());
@@ -2512,7 +2513,7 @@ mod tests {
         assert_eq!(
             BetValidator::get_user_stake(&env, &market_id, &user),
             5_000_000
-        );
+        );        });
     }
 
     #[test]
