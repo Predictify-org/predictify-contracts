@@ -2011,10 +2011,11 @@ mod tests {
         );        });
     }
 
-    #[ignore]
     #[test]
     fn test_fee_slippage_guard_default_fallback() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         // No config stored and no legacy storage - should use DEFAULT_PLATFORM_FEE_PERCENTAGE (200)
         // max_fee_bps at default should pass
         assert!(BetValidator::validate_fee_slippage(&env, 200).is_ok());
@@ -2023,7 +2024,7 @@ mod tests {
         assert_eq!(
             BetValidator::validate_fee_slippage(&env, 150),
             Err(Error::FeeExceedsMax)
-        );
+        );        });
     }
 
     // ===== FOCUSED TESTS FOR DOCUMENTED FUNCTIONS =====
