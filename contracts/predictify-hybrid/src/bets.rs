@@ -2412,9 +2412,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_validate_bet_amount_against_limits_enforces_market_cap() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let market_id = Symbol::new(&env, "mkt_cap_val");
         set_market_max_bet_cap(&env, &market_id, 3_000_000).unwrap();
 
@@ -2426,7 +2427,7 @@ mod tests {
         // Within per-market cap
         assert!(
             BetValidator::validate_bet_amount_against_limits(&env, &market_id, 2_000_000).is_ok()
-        );
+        );        });
     }
 
     // ===== ISSUE #1395: ATOMIC SINGLE-BET PREPARATION =====
