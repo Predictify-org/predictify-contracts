@@ -195,11 +195,7 @@ mod tests {
 
     use super::*;
     use crate::PredictifyHybridClient;
-    use soroban_sdk::{
-        testutils::Address as _,
-        token::Client as TokenClient,
-        Address, Env,
-    };
+    use soroban_sdk::{testutils::Address as _, token::Client as TokenClient, Address, Env};
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
     struct BalanceTestSetup {
@@ -243,7 +239,9 @@ mod tests {
 
         assert_eq!(balance.amount, 500_0000000);
         assert_eq!(
-            client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount,
+            client
+                .get_balance(&setup.user, &ReflectorAsset::Stellar)
+                .amount,
             500_0000000
         );
         assert_eq!(token_client.balance(&setup.user), 500_0000000);
@@ -260,7 +258,12 @@ mod tests {
         let balance = client.withdraw(&setup.user, &ReflectorAsset::Stellar, &500);
 
         assert_eq!(balance.amount, 0);
-        assert_eq!(client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount, 0);
+        assert_eq!(
+            client
+                .get_balance(&setup.user, &ReflectorAsset::Stellar)
+                .amount,
+            0
+        );
         assert_eq!(token_client.balance(&setup.user), 1_000_0000000);
         assert_eq!(token_client.balance(&setup.contract_id), 0);
     }
@@ -276,7 +279,9 @@ mod tests {
 
         assert_eq!(balance.amount, 300_0000000);
         assert_eq!(
-            client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount,
+            client
+                .get_balance(&setup.user, &ReflectorAsset::Stellar)
+                .amount,
             300_0000000
         );
         assert_eq!(token_client.balance(&setup.user), 700_0000000);
@@ -294,7 +299,9 @@ mod tests {
 
         assert_eq!(result, Err(Ok(Error::InsufficientBalance)));
         assert_eq!(
-            client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount,
+            client
+                .get_balance(&setup.user, &ReflectorAsset::Stellar)
+                .amount,
             100_0000000
         );
     }
@@ -316,7 +323,9 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(
-            client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount,
+            client
+                .get_balance(&setup.user, &ReflectorAsset::Stellar)
+                .amount,
             400_0000000
         );
         assert_eq!(token_client.balance(&setup.user), 600_0000000);
