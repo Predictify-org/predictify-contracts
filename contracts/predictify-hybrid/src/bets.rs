@@ -2433,9 +2433,10 @@ mod tests {
     // ===== ISSUE #1395: ATOMIC SINGLE-BET PREPARATION =====
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_atomic_bet_stats_are_prepared_without_writing_storage() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let market_id = Symbol::new(&env, "mkt_atomic");
         let outcome = String::from_str(&env, "yes");
 
@@ -2464,7 +2465,7 @@ mod tests {
         assert_eq!(stored.total_bets, 1);
         assert_eq!(stored.total_amount_locked, 5_000_000);
         assert_eq!(stored.unique_bettors, 1);
-        assert_eq!(stored.outcome_totals.get(outcome), Some(5_000_000));
+        assert_eq!(stored.outcome_totals.get(outcome), Some(5_000_000));        });
     }
 
     #[test]
