@@ -1,20 +1,39 @@
 #![allow(dead_code)]
 
-use soroban_sdk::{contracttype, vec, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, Env, Map, String, Symbol, Vec};
 
 use crate::err::Error;
-use crate::markets::MarketStateManager;
-use crate::types::*;
 
-/// Edge case management system for Predictify Hybrid contract
+/// Edge-case helpers for the Predictify Hybrid contract.
 ///
-/// This module provides comprehensive edge case handling with:
-/// - Zero stake scenario detection and handling
-/// - Tie-breaking mechanisms for equal outcomes
-/// - Orphaned market detection and recovery
-/// - Partial resolution handling and validation
-/// - Edge case testing and validation functions
-/// - Edge case statistics and analytics
+/// # Surface
+///
+/// This module is **full-build only**. It deliberately exposes a minimal,
+/// honest set of entry points. Every remaining helper either performs real
+/// work or fails closed with a typed [`Error`]; no exported function returns
+/// success without acting.
+///
+/// Exported entry points (see the `#[contractimpl]` in `lib.rs`):
+///
+/// - [`EdgeCaseHandler::implement_tie_breaking_mechanism`] - deterministic,
+///   documented tie-breaking rule.
+/// - [`EdgeCaseHandler::detect_orphaned_markets`] - read-only orphan scan that
+///   fails closed because the contract has no global market index.
+/// - [`EdgeCaseHandler::validate_edge_case_handling`] - pure validation.
+/// - [`EdgeCaseHandler::get_edge_case_statistics`] - read-only baseline
+///   statistics (there is no persisted aggregation yet).
+///
+/// # Removed entry points
+///
+/// The following were previously exported but were placeholders that returned
+/// `Ok(())` without changing state. One of them also trapped on unchecked
+/// timestamp arithmetic. They duplicated working logic and have been removed
+/// from the contract surface:
+///
+/// - `handle_zero_stake_scenario` - duplicated `cancel_event` / `extend_market`
+///   and used unchecked timestamp arithmetic; use those admin entry points.
+/// - `handle_partial_resolution` - duplicated the real resolution path.
+/// - `test_edge_case_scenarios` - a test helper that was exported by mistake.
 
 // ===== EDGE CASE TYPES =====
 
@@ -43,28 +62,6 @@ pub enum EdgeCaseScenario {
     DisputeTimeout,
     /// Insufficient participation for reliable resolution
     LowParticipation,
-}
-
-/// Comprehensive data structure for partial resolution scenarios.
-///
-/// This structure contains all information needed to handle markets that
-/// cannot be fully resolved due to missing oracle data, insufficient
-/// participation, or other edge cases.
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[contracttype]
-pub struct PartialData {
-    /// Available oracle result (if any)
-    pub oracle_result: Option<String>,
-    /// Community consensus data (placeholder - would be implemented with proper serialization)
-    pub community_consensus_available: bool,
-    /// Percentage of market that can be resolved
-    pub resolution_confidence: i128,
-    /// Reason for partial resolution
-    pub partial_reason: String,
-    /// Suggested resolution outcome
-    pub suggested_outcome: Option<String>,
-    /// Timestamp when partial data was collected
-    pub timestamp: u64,
 }
 
 /// Edge case handler configuration and limits.
@@ -118,75 +115,16 @@ pub struct EdgeCaseStats {
 pub struct EdgeCaseHandler;
 
 impl EdgeCaseHandler {
-    /// Handle zero stake scenarios where no user has placed any stakes.
+    /// Implement a deterministic tie-breaking mechanism for equal outcomes.
     ///
-    /// This function detects markets with zero total stakes and implements
-    /// appropriate handling strategies, including market cancellation or
-    /// extension of the voting period.
+    /// # Rule
     ///
-    /// # Parameters
-    ///
-    /// * `env` - The Soroban environment for blockchain operations
-    /// * `market_id` - Unique identifier of the market to check
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())` - Zero stake scenario handled successfully
-    /// * `Err(Error)` - Handling failed due to validation or processing errors
-    ///
-    /// # Handling Strategies
-    ///
-    /// 1. **Recent Market**: Extend voting period if market is new
-    /// 2. **Mature Market**: Cancel market and refund fees if appropriate
-    /// 3. **Near Expiry**: Trigger emergency extension with reduced fees
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use soroban_sdk::{Env, Symbol};
-    /// use crate::edge_cases::EdgeCaseHandler;
-    ///
-    /// let env = Env::default();
-    /// let market_id = Symbol::new(&env, "market_1");
-    ///
-    /// // Handle zero stake scenario
-    /// EdgeCaseHandler::handle_zero_stake_scenario(&env, market_id)
-    ///     .expect("Zero stake handling should succeed");
-    /// ```
-    pub fn handle_zero_stake_scenario(env: &Env, market_id: Symbol) -> Result<(), Error> {
-        // Get market data
-        let market = MarketStateManager::get_market(env, &market_id)?;
-
-        // Verify market has zero stakes
-        if market.total_staked > 0 {
-            return Ok(()); // No action needed - market has stakes
-        }
-
-        // Check market age to determine handling strategy
-        let current_time = env.ledger().timestamp();
-        let market_age = current_time - (market.end_time - (market.end_time - current_time));
-        let market_duration = market.end_time - market_age;
-
-        // Define age thresholds
-        let early_stage_threshold = market_duration / 4; // First 25% of market life
-        let mature_stage_threshold = market_duration * 3 / 4; // After 75% of market life
-
-        if market_age < early_stage_threshold {
-            // Strategy 1: Recent market - extend voting period
-            Self::extend_for_participation(env, &market_id, 24 * 60 * 60) // 24 hours
-        } else if market_age > mature_stage_threshold {
-            // Strategy 2: Mature market - consider cancellation
-            Self::cancel_zero_stake_market(env, &market_id)
-        } else {
-            // Strategy 3: Mid-life market - emergency extension
-            Self::emergency_extension_for_stakes(env, &market_id, 12 * 60 * 60) // 12 hours
-        }
-    }
-
-    /// Implement tie-breaking mechanism for outcomes with equal stakes.
-    ///
-    /// This function resolves ties when multiple outcomes have identical
-    /// stake amounts by applying various tie-breaking strategies.
+    /// Outcomes are compared as raw host strings and the lexicographically
+    /// smallest outcome wins. This is fully deterministic and depends only on
+    /// the outcome labels, so every observer derives the same winner. The
+    /// earlier "earliest vote" / "most voters" / "oracle preference" strategies
+    /// were never implemented (they all returned the first element) and have
+    /// been removed rather than kept as misleading configuration.
     ///
     /// # Parameters
     ///
@@ -195,15 +133,8 @@ impl EdgeCaseHandler {
     ///
     /// # Returns
     ///
-    /// * `Ok(String)` - The selected winning outcome after tie-breaking
-    /// * `Err(Error)` - Tie-breaking failed or no valid resolution
-    ///
-    /// # Tie-Breaking Strategies
-    ///
-    /// 1. **Earliest Vote**: Outcome with the earliest first vote wins
-    /// 2. **Most Voters**: Outcome with the most individual voters wins
-    /// 3. **Alphabetical**: Deterministic alphabetical ordering
-    /// 4. **Oracle Preference**: Oracle result takes precedence if available
+    /// * `Ok(String)` - The lexicographically smallest outcome
+    /// * `Err(Error::InvalidInput)` - `outcomes` is empty
     ///
     /// # Example
     ///
@@ -220,123 +151,36 @@ impl EdgeCaseHandler {
     ///
     /// let winner = EdgeCaseHandler::implement_tie_breaking_mechanism(&env, tied_outcomes)
     ///     .expect("Tie-breaking should succeed");
+    /// assert_eq!(winner, String::from_str(&env, "no"));
     /// ```
     pub fn implement_tie_breaking_mechanism(
         env: &Env,
         outcomes: Vec<String>,
     ) -> Result<String, Error> {
         if outcomes.is_empty() {
-            return Err(Error::InvalidOutcomes);
+            return Err(Error::InvalidInput);
         }
 
         if outcomes.len() == 1 {
             return Ok(outcomes.get(0).unwrap());
         }
 
-        // Get edge case configuration
-        let config = Self::get_edge_case_config(env);
-        let tie_breaking_method = config.tie_breaking_method;
-
-        if tie_breaking_method == String::from_str(env, "earliest_vote") {
-            Self::tie_break_by_earliest_vote(env, &outcomes)
-        } else if tie_breaking_method == String::from_str(env, "most_voters") {
-            Self::tie_break_by_voter_count(env, &outcomes)
-        } else if tie_breaking_method == String::from_str(env, "oracle_preference") {
-            Self::tie_break_by_oracle_preference(env, &outcomes)
-        } else {
-            // Default: alphabetical tie-breaking
-            Self::tie_break_alphabetically(env, &outcomes)
-        }
+        Self::tie_break_alphabetically(env, &outcomes)
     }
 
-    /// Detect orphaned markets and implement recovery strategies.
+    /// Detect orphaned markets.
     ///
-    /// This function identifies markets that have become orphaned due to
-    /// inactive administrators, failed oracle responses, or other issues,
-    /// and implements appropriate recovery mechanisms.
+    /// This contract stores markets by caller-supplied `Symbol` and keeps **no
+    /// global market index**, so it cannot enumerate markets to scan them.
+    /// Rather than returning success with an empty list (a silent no-op), this
+    /// entry point fails closed with [`Error::InvalidState`]. Callers that know
+    /// the market IDs they care about should query those markets directly.
     ///
     /// # Returns
     ///
-    /// * `Ok(Vec<Symbol>)` - List of orphaned market IDs detected
-    /// * `Err(Error)` - Detection process failed
-    ///
-    /// # Orphan Criteria
-    ///
-    /// A market is considered orphaned if:
-    /// - Market has ended but no resolution attempt made
-    /// - Oracle is configured but hasn't responded
-    /// - Admin hasn't performed any actions for extended period
-    /// - No dispute activity despite questionable resolution
-    ///
-    /// # Recovery Strategies
-    ///
-    /// 1. **Auto-Resolution**: Use available data for resolution
-    /// 2. **Community Takeover**: Allow community to vote on resolution
-    /// 3. **Stake Refund**: Return stakes to participants
-    /// 4. **Emergency Admin**: Assign temporary admin for resolution
-    pub fn detect_orphaned_markets(env: &Env) -> Result<Vec<Symbol>, Error> {
-        let mut orphaned_markets = Vec::new(env);
-        let current_time = env.ledger().timestamp();
-        let config = Self::get_edge_case_config(env);
-
-        // Iterate through all markets to find orphaned ones
-        // Note: In a real implementation, this would use market indexing
-        let market_ids = Self::get_all_market_ids(env)?;
-
-        for market_id in market_ids.iter() {
-            let market = match MarketStateManager::get_market(env, &market_id) {
-                Ok(m) => m,
-                Err(_) => continue, // Skip inaccessible markets
-            };
-
-            // Check if market meets orphan criteria
-            if Self::is_market_orphaned(env, &market, current_time, &config)? {
-                orphaned_markets.push_back(market_id);
-            }
-        }
-
-        Ok(orphaned_markets)
-    }
-
-    /// Handle partial resolution scenarios with incomplete data.
-    ///
-    /// This function manages markets that cannot be fully resolved due to
-    /// incomplete oracle data, insufficient participation, or other factors.
-    ///
-    /// # Parameters
-    ///
-    /// * `env` - The Soroban environment for blockchain operations
-    /// * `market_id` - Unique identifier of the market requiring partial resolution
-    /// * `partial_data` - Available data for partial resolution
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())` - Partial resolution completed successfully
-    /// * `Err(Error)` - Partial resolution failed
-    ///
-    /// # Resolution Strategies
-    ///
-    /// 1. **Confidence-Based**: Use partial data if confidence is above threshold
-    /// 2. **Community Fallback**: Fall back to community consensus
-    /// 3. **Proportional**: Distribute payouts proportionally based on confidence
-    /// 4. **Delay**: Extend resolution period to gather more data
-    pub fn handle_partial_resolution(
-        env: &Env,
-        market_id: Symbol,
-        partial_data: PartialData,
-    ) -> Result<(), Error> {
-        // Validate partial data
-        Self::validate_partial_data(env, &partial_data)?;
-
-        let config = Self::get_edge_case_config(env);
-
-        // Check if confidence is sufficient for resolution
-        if partial_data.resolution_confidence >= config.min_resolution_confidence {
-            Self::resolve_with_partial_data(env, &market_id, &partial_data)
-        } else {
-            // Attempt alternative resolution strategies
-            Self::attempt_alternative_resolution(env, &market_id, &partial_data)
-        }
+    /// * `Err(Error::InvalidState)` - always; enumeration is not supported.
+    pub fn detect_orphaned_markets(_env: &Env) -> Result<Vec<Symbol>, Error> {
+        Err(Error::InvalidState)
     }
 
     /// Validate edge case handling scenarios and configurations.
@@ -408,58 +252,16 @@ impl EdgeCaseHandler {
         Ok(())
     }
 
-    /// Create comprehensive test scenarios for edge case validation.
+    /// Get baseline statistics about edge case occurrences and handling.
     ///
-    /// This function generates a suite of test scenarios to validate
-    /// edge case handling across different market conditions.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())` - Test scenarios created and executed successfully
-    /// * `Err(Error)` - Test creation or execution failed
-    ///
-    /// # Test Categories
-    ///
-    /// 1. **Zero Stake Tests**: Various zero stake scenarios
-    /// 2. **Tie-Breaking Tests**: Different tie conditions
-    /// 3. **Orphan Detection Tests**: Market abandonment scenarios
-    /// 4. **Partial Resolution Tests**: Incomplete data scenarios
-    /// 5. **Configuration Tests**: Edge case config validation
-    pub fn test_edge_case_scenarios(env: &Env) -> Result<(), Error> {
-        // Test zero stake scenarios
-        Self::test_zero_stake_scenarios(env)?;
-
-        // Test tie-breaking mechanisms
-        Self::test_tie_breaking_scenarios(env)?;
-
-        // Test orphaned market detection
-        Self::test_orphaned_market_scenarios(env)?;
-
-        // Test partial resolution handling
-        Self::test_partial_resolution_scenarios(env)?;
-
-        // Test configuration validation
-        Self::test_configuration_scenarios(env)?;
-
-        Ok(())
-    }
-
-    /// Get comprehensive statistics about edge case occurrences and handling.
-    ///
-    /// This function provides detailed analytics about edge cases to help
-    /// optimize system performance and identify improvement opportunities.
+    /// This is a read-only entry point. The contract does **not** persist any
+    /// edge-case aggregation yet, so this returns the zeroed baseline structure
+    /// with every scenario type initialised to `0`. It is documented here so
+    /// callers are not misled into treating the zeros as real telemetry.
     ///
     /// # Returns
     ///
-    /// * `Ok(EdgeCaseStats)` - Comprehensive edge case statistics
-    /// * `Err(Error)` - Statistics calculation failed
-    ///
-    /// # Statistics Included
-    ///
-    /// 1. **Occurrence Rates**: Frequency of each edge case type
-    /// 2. **Resolution Success**: Success rates for different scenarios
-    /// 3. **Performance Metrics**: Resolution times and efficiency
-    /// 4. **Trend Analysis**: Changes in edge case patterns over time
+    /// * `Ok(EdgeCaseStats)` - Baseline statistics with all counters at zero.
     pub fn get_edge_case_statistics(env: &Env) -> Result<EdgeCaseStats, Error> {
         // Initialize statistics structure
         let mut stats = EdgeCaseStats {
@@ -490,8 +292,6 @@ impl EdgeCaseHandler {
             .cases_by_type
             .set(EdgeCaseScenario::LowParticipation, 0);
 
-        // In a real implementation, this would aggregate data from storage
-        // For now, return the initialized structure
         Ok(stats)
     }
 
@@ -506,7 +306,7 @@ impl EdgeCaseHandler {
             max_orphan_time: 7 * 24 * 60 * 60, // 7 days
             min_resolution_confidence: 6000,   // 60% minimum confidence
             max_single_user_percentage: 8000,  // 80% maximum single user stake
-            tie_breaking_method: String::from_str(env, "earliest_vote"),
+            tie_breaking_method: String::from_str(env, "alphabetical"),
         }
     }
 
@@ -535,163 +335,30 @@ impl EdgeCaseHandler {
         Ok(())
     }
 
-    /// Extend market for increased participation.
-    fn extend_for_participation(
-        _env: &Env,
-        _market_id: &Symbol,
-        _extension_seconds: u64,
-    ) -> Result<(), Error> {
-        // Implementation would extend market duration
-        // This is a placeholder that would integrate with the extension system
-        Ok(())
-    }
-
-    /// Cancel market with zero stakes.
-    fn cancel_zero_stake_market(_env: &Env, _market_id: &Symbol) -> Result<(), Error> {
-        // Implementation would cancel market and handle refunds
-        Ok(())
-    }
-
-    /// Emergency extension for stake collection.
-    fn emergency_extension_for_stakes(
-        _env: &Env,
-        _market_id: &Symbol,
-        _extension_seconds: u64,
-    ) -> Result<(), Error> {
-        // Implementation would trigger emergency extension
-        Ok(())
-    }
-
-    /// Tie-breaking by earliest vote timestamp.
-    fn tie_break_by_earliest_vote(_env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
-        // Implementation would check vote timestamps
-        // For now, return first outcome as placeholder
-        Ok(outcomes.get(0).unwrap())
-    }
-
-    /// Tie-breaking by voter count.
-    fn tie_break_by_voter_count(_env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
-        // Implementation would count unique voters per outcome
-        Ok(outcomes.get(0).unwrap())
-    }
-
-    /// Tie-breaking by oracle preference.
-    fn tie_break_by_oracle_preference(_env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
-        // Implementation would check oracle result
-        Ok(outcomes.get(0).unwrap())
-    }
-
-    /// Alphabetical tie-breaking (deterministic).
+    /// Deterministic alphabetical tie-breaking.
+    ///
+    /// Returns the lexicographically smallest outcome label. Soroban's
+    /// [`String`] implements [`Ord`] over its underlying bytes, so the result is
+    /// stable and reproducible across all callers and hosts.
     fn tie_break_alphabetically(_env: &Env, outcomes: &Vec<String>) -> Result<String, Error> {
-        // Implementation would sort alphabetically
-        Ok(outcomes.get(0).unwrap())
-    }
-
-    /// Get all market IDs in the system.
-    fn get_all_market_ids(env: &Env) -> Result<Vec<Symbol>, Error> {
-        // In a real implementation, this would query market index
-        Ok(Vec::new(env))
-    }
-
-    /// Check if a market is orphaned.
-    fn is_market_orphaned(
-        _env: &Env,
-        market: &Market,
-        current_time: u64,
-        config: &EdgeCaseConfig,
-    ) -> Result<bool, Error> {
-        // Check if market has ended but not resolved
-        if current_time > market.end_time && market.winning_outcomes.is_none() {
-            let time_since_end = current_time - market.end_time;
-            if time_since_end > config.max_orphan_time {
-                return Ok(true);
-            }
-        }
-
-        // Check for other orphan conditions
-        // - Oracle configured but no response
-        // - Admin inactive
-        // - No resolution attempts
-
-        Ok(false)
-    }
-
-    /// Validate partial resolution data.
-    fn validate_partial_data(_env: &Env, partial_data: &PartialData) -> Result<(), Error> {
-        if partial_data.resolution_confidence < 0 || partial_data.resolution_confidence > 10000 {
-            return Err(Error::InvalidThreshold);
-        }
-
-        if partial_data.partial_reason.is_empty() {
+        if outcomes.is_empty() {
             return Err(Error::InvalidInput);
         }
 
-        Ok(())
-    }
+        let mut winner = outcomes.get(0).unwrap();
+        for candidate in outcomes.iter() {
+            if candidate.cmp(&winner) == core::cmp::Ordering::Less {
+                winner = candidate;
+            }
+        }
 
-    /// Resolve market with partial data.
-    fn resolve_with_partial_data(
-        _env: &Env,
-        _market_id: &Symbol,
-        _partial_data: &PartialData,
-    ) -> Result<(), Error> {
-        // Implementation would resolve market based on partial data
-        Ok(())
-    }
-
-    /// Attempt alternative resolution strategies.
-    fn attempt_alternative_resolution(
-        _env: &Env,
-        _market_id: &Symbol,
-        _partial_data: &PartialData,
-    ) -> Result<(), Error> {
-        // Implementation would try alternative resolution methods
-        Ok(())
-    }
-
-    // ===== TEST HELPER METHODS =====
-
-    /// Test zero stake scenarios.
-    fn test_zero_stake_scenarios(_env: &Env) -> Result<(), Error> {
-        // Test early stage zero stakes
-        // Test mature market zero stakes
-        // Test near-expiry zero stakes
-        Ok(())
-    }
-
-    /// Test tie-breaking scenarios.
-    fn test_tie_breaking_scenarios(_env: &Env) -> Result<(), Error> {
-        // Test different tie-breaking methods
-        // Test edge cases in tie-breaking
-        Ok(())
-    }
-
-    /// Test orphaned market scenarios.
-    fn test_orphaned_market_scenarios(_env: &Env) -> Result<(), Error> {
-        // Test orphan detection
-        // Test recovery strategies
-        Ok(())
-    }
-
-    /// Test partial resolution scenarios.
-    fn test_partial_resolution_scenarios(_env: &Env) -> Result<(), Error> {
-        // Test partial data handling
-        // Test confidence thresholds
-        Ok(())
-    }
-
-    /// Test configuration scenarios.
-    fn test_configuration_scenarios(_env: &Env) -> Result<(), Error> {
-        // Test config validation
-        // Test edge cases in configuration
-        Ok(())
+        Ok(winner)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::Address;
 
     #[test]
     fn test_edge_case_config_validation() {
@@ -716,20 +383,29 @@ mod tests {
     }
 
     #[test]
-    fn test_tie_breaking_mechanism() {
+    fn test_tie_breaking_is_deterministic_alphabetical() {
         let env = Env::default();
         let outcomes = soroban_sdk::vec![
             &env,
             String::from_str(&env, "yes"),
             String::from_str(&env, "no"),
+            String::from_str(&env, "maybe"),
         ];
 
-        let result = EdgeCaseHandler::implement_tie_breaking_mechanism(&env, outcomes);
-        assert!(result.is_ok());
+        let winner =
+            EdgeCaseHandler::implement_tie_breaking_mechanism(&env, outcomes).expect("tie-break");
+        assert_eq!(winner, String::from_str(&env, "maybe"));
     }
 
     #[test]
-    fn test_edge_case_statistics() {
+    fn test_tie_breaking_empty_is_invalid_input() {
+        let env = Env::default();
+        let result = EdgeCaseHandler::implement_tie_breaking_mechanism(&env, Vec::new(&env));
+        assert_eq!(result, Err(Error::InvalidInput));
+    }
+
+    #[test]
+    fn test_edge_case_statistics_baseline() {
         let env = Env::default();
 
         let stats = EdgeCaseHandler::get_edge_case_statistics(&env);
