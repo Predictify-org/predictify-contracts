@@ -2063,9 +2063,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_get_effective_bet_limits_falls_back_to_global() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let market_id = Symbol::new(&env, "mkt_glb");
         let global = BetLimits {
             min_bet: 3_000_000,
@@ -2075,7 +2076,7 @@ mod tests {
 
         let limits = get_effective_bet_limits(&env, &market_id);
         assert_eq!(limits.min_bet, 3_000_000);
-        assert_eq!(limits.max_bet, 80_000_000_000);
+        assert_eq!(limits.max_bet, 80_000_000_000);        });
     }
 
     #[test]
