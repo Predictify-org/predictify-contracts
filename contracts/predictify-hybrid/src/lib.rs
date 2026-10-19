@@ -5,6 +5,9 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 extern crate alloc;
 
+#[cfg(test)]
+pub(crate) mod testutil;
+
 // ===== MODULE DECLARATIONS =====
 // These must be declared here so Rust knows to compile them as part of this crate.
 
