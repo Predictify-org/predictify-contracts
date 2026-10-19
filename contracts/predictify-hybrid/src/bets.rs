@@ -277,46 +277,9 @@ fn validate_limits_bounds(limits: &BetLimits) -> Result<(), Error> {
 pub struct BetManager;
 
 impl BetManager {
-    /// Resolve the active platform fee percentage (in basis points).
-    ///
-    /// Consults the configuration hierarchy in order:
-    /// 1. [`ConfigManager`] runtime config
-    /// 2. [`FeeConfigManager`] fee-specific config
-    /// 3. Legacy `"platform_fee"` storage key
-    /// 4. [`DEFAULT_PLATFORM_FEE_PERCENTAGE`] constant
-    ///
-    /// # Parameters
-    ///
-    /// - `env` – Soroban environment
-    ///
-    /// # Returns
-    ///
-    /// The fee percentage in basis points (e.g. 200 = 2%).
-    pub fn get_live_fee_percentage(env: &Env) -> Result<i128, Error> {
-        // 1. Try contract configuration
-        if let Ok(cfg) = crate::config::ConfigManager::get_config(env) {
-            if !cfg.fees.fees_enabled {
-                return Ok(0);
-            }
-            return Ok(cfg.fees.platform_fee_percentage);
-        }
-
-        // 2. Try fee-specific configuration
-        if let Ok(fee_config) = crate::fees::FeeConfigManager::get_fee_config(env) {
-            if !fee_config.fees_enabled {
-                return Ok(0);
-            }
-            return Ok(fee_config.platform_fee_percentage);
-        }
-
-        // 3. Try legacy key alone
-        let fee_key = Symbol::new(env, "platform_fee");
-        if let Some(legacy_fee) = env.storage().persistent().get::<Symbol, i128>(&fee_key) {
-            return Ok(legacy_fee);
-        }
-
-        // 4. Default constant (fallback to DEFAULT_PLATFORM_FEE_PERCENTAGE)
-        Ok(crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE)
+    /// Resolve the current platform fee through the shared payout resolver.
+    pub fn get_live_fee_percentage(env: &Env, market: &Market) -> Result<i128, Error> {
+        crate::fees::effective_fee_bps(env, market)
     }
 
     /// Place a bet on a market outcome with fund locking.
@@ -400,17 +363,17 @@ impl BetManager {
         let rate_limiter = crate::rate_limiter::RateLimiter::new(env.clone());
         rate_limiter.rate_limit_global_bets_per_ledger()?;
 
-        // Resolve and validate the fee once before any fund or bet-state write.
+        // Get and validate market
+        let mut market = MarketStateManager::get_market(env, &market_id)?;
+
         // A zero max_fee_bps keeps the existing "no slippage guard" behaviour.
         if max_fee_bps > 0 {
-            let actual_fee = Self::get_live_fee_percentage(env)?;
+            let actual_fee = Self::get_live_fee_percentage(env, &market)?;
             if actual_fee > max_fee_bps {
                 return Err(Error::FeeExceedsMax);
             }
         }
 
-        // Get and validate market
-        let mut market = MarketStateManager::get_market(env, &market_id)?;
         BetValidator::validate_market_for_betting(env, &market)?;
 
         // Validate bet parameters (uses configurable min/max limits per event or global)
@@ -536,15 +499,6 @@ impl BetManager {
             return Err(Error::IdempotentBatchAlreadyApplied);
         }
 
-        // Slippage check: verify live fee is not above the maximum acceptable threshold
-        // max_fee_bps == 0 means no slippage guard
-        if max_fee_bps > 0 {
-            let actual_fee = Self::get_live_fee_percentage(env)?;
-            if actual_fee > max_fee_bps {
-                return Err(Error::FeeExceedsMax);
-            }
-        }
-
         // Validate batch size
         if bets.is_empty() {
             return Err(Error::BatchEmpty);
@@ -555,9 +509,6 @@ impl BetManager {
         }
 
         // Phase 1: Validate all bets and collect data
-        // Enforce fee slippage guard once for the batch
-        BetValidator::validate_fee_slippage(env, max_fee_bps)?;
-
         let mut markets = soroban_sdk::Vec::new(env);
         let mut total_amount: i128 = 0;
         let mut seen_markets = soroban_sdk::Map::new(env);
@@ -579,6 +530,11 @@ impl BetManager {
 
             // Get and validate market
             let market = MarketStateManager::get_market(env, &market_id)?;
+            if max_fee_bps > 0
+                && Self::get_live_fee_percentage(env, &market)? > max_fee_bps
+            {
+                return Err(Error::FeeExceedsMax);
+            }
             BetValidator::validate_market_for_betting(env, &market)?;
 
             // Validate bet parameters
@@ -908,17 +864,22 @@ impl BetManager {
             return Ok(0);
         }
 
-        let fee_percentage =
-            crate::fees::FeeManager::get_fee_percentage_for_timestamp(env, bet.timestamp);
-
-        let fee = (summary.total_pool * fee_percentage as i128) / 10_000;
-        let distributable_pool = summary.total_pool - fee;
+        let fee_percentage = crate::fees::effective_fee_bps(env, &market)?;
+        let fee = summary
+            .total_pool
+            .checked_mul(fee_percentage)
+            .ok_or(Error::Overflow)?
+            / crate::config::PERCENTAGE_DENOMINATOR;
+        let distributable_pool = summary
+            .total_pool
+            .checked_sub(fee)
+            .ok_or(Error::Overflow)?;
         let pool_per_winner = distributable_pool / num_winners;
 
         let payout = (bet
             .amount
             .checked_mul(pool_per_winner)
-            .ok_or(Error::InvalidInput)?)
+            .ok_or(Error::Overflow)?)
             / total_bets_on_outcome;
 
         Ok(payout)
@@ -1357,14 +1318,7 @@ impl BetValidator {
     ///
     /// - `Error::FeeExceedsMax` - The effective fee exceeds `max_fee_bps`
     pub fn validate_fee_slippage(env: &Env, max_fee_bps: i128) -> Result<(), Error> {
-        let effective_fee_bps = match crate::config::ConfigManager::get_config(env) {
-            Ok(cfg) => cfg.fees.platform_fee_percentage,
-            Err(_) => env
-                .storage()
-                .persistent()
-                .get::<Symbol, i128>(&Symbol::new(env, "plat_fee"))
-                .unwrap_or(crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE),
-        };
+        let effective_fee_bps = crate::fees::resolve_effective_fee_bps(env)?;
 
         if effective_fee_bps > max_fee_bps {
             return Err(Error::FeeExceedsMax);

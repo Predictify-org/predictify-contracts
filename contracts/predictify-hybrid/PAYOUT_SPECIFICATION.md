@@ -4,29 +4,34 @@
 
 This document provides a comprehensive formal specification for the payout calculation and distribution mechanism in the Predictify Hybrid prediction market smart contract.
 
-## 1. Payout Calculation Formula
+## 1. Fee Source and Payout Calculation
+
+The `ConfigManager` platform fee is the canonical source. The fee applies at
+market resolution time, so a fee update affects every still-open market in the
+same way regardless of whether winners claim individually or receive a
+distributed payout. The legacy `platform_fee` storage value is only a
+read-compatibility fallback when the canonical config is absent and is kept in
+sync by `set_platform_fee`.
+
+All fee values are basis points in the range 0–1000; 10,000 bps is 100%.
 
 ### 1.1 Basic Payout Formula
 
-The fundamental payout calculation for winning bets follows this formula:
+For a market with total pool `P`, total stake on all winning outcomes `W`, a
+winning user's stake `S`, and platform fee `F` bps:
 
 ```
-payout = (user_bet_amount / total_winning_bets) * total_pool * (1 - platform_fee_percentage)
+user_share = floor(S * (10_000 - F) / 10_000)
+payout = floor(user_share * P / W)
+platform_fee = floor(P * F / 10_000)
+payout_remainder = P - platform_fee - sum(all winner payouts)
 ```
 
-Where:
-- `user_bet_amount`: Amount staked by the user on the winning outcome
-- `total_winning_bets`: Total amount bet on all winning outcomes (handles ties)
-- `total_pool`: Total amount locked across all outcomes in the market
-- `platform_fee_percentage`: Platform fee taken from winnings (in basis points, e.g., 200 = 2%)
-
-### 1.2 Simplified Formula
-
-The calculation can be broken down into steps:
-
-1. **User Share**: `(user_bet_amount * (100 - platform_fee_percentage)) / 100`
-2. **Pool Proportion**: `user_share / total_winning_bets`
-3. **Final Payout**: `pool_proportion * total_pool`
+Every division rounds down (floor) toward the user payout. The unallocated
+remainder is credited to the fee vault. Consequently, for every resolved
+market, `sum(all winner payouts) + platform_fee + payout_remainder == P`
+exactly in integer units. All intermediate multiplication and addition uses
+checked arithmetic and reports an overflow error.
 
 ## 2. Fee Structure
 
@@ -98,51 +103,10 @@ Draw Winner Payout: (2000/7000) * 10000 * 0.98 = 2800 tokens
 
 ### 4.1 Core Function
 
-```rust
-pub fn calculate_bet_payout(
-    env: &Env,
-    market_id: &Symbol,
-    user: &Address,
-) -> Result<i128, Error> {
-    // 1. Validate user has a winning bet
-    let bet = BetStorage::get_bet(env, market_id, user).ok_or(Error::NothingToClaim)?;
-    if !bet.is_winner() {
-        return Ok(0);
-    }
-
-    // 2. Get market and statistics
-    let market = MarketStateManager::get_market(env, market_id)?;
-    let stats = BetStorage::get_market_bet_stats(env, market_id);
-
-    // 3. Calculate total winning bets (handles ties)
-    let winning_outcomes = market.winning_outcomes.ok_or(Error::MarketNotResolved)?;
-    let mut winning_total = 0;
-    for outcome in winning_outcomes.iter() {
-        winning_total += stats.outcome_totals.get(outcome.clone()).unwrap_or(0);
-    }
-
-    // 4. Get platform fee percentage
-    let fee_percentage = crate::config::ConfigManager::get_config(env)
-        .map(|cfg| cfg.fees.platform_fee_percentage)
-        .unwrap_or_else(|_| {
-            // Fallback to legacy storage for backward compatibility
-            env.storage()
-                .persistent()
-                .get(&Symbol::new(env, "platform_fee"))
-                .unwrap_or(200) // Default 2% if not set
-        });
-
-    // 5. Calculate final payout
-    let payout = MarketUtils::calculate_payout(
-        bet.amount,
-        winning_total,
-        stats.total_amount_locked,
-        fee_percentage,
-    )?;
-
-    Ok(payout)
-}
-```
+All settlement operations call `effective_fee_bps(env, market)`. It reads the
+canonical configuration, validates the fee bounds, and consults the legacy key
+only when the canonical config is absent. If neither source exists, it returns
+`ConfigNotFound`; settlement has no implicit fee default.
 
 ### 4.2 Utility Calculation
 
@@ -159,13 +123,13 @@ pub fn calculate_payout(
 
     // Apply overflow protection
     let user_share = (user_stake
-        .checked_mul(100 - fee_percentage)
-        .ok_or(Error::InvalidInput)?)
-        / 100;
+        .checked_mul(10_000 - fee_percentage)
+        .ok_or(Error::Overflow)?)
+        / 10_000;
     
     let payout = (user_share
         .checked_mul(total_pool)
-        .ok_or(Error::InvalidInput)?)
+        .ok_or(Error::Overflow)?)
         / winning_total;
 
     Ok(payout)

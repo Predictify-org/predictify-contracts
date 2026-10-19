@@ -205,6 +205,9 @@ mod max_participants_tests;
 #[path = "tests/fee_config_commit_reveal_tests.rs"]
 mod fee_config_commit_reveal_tests;
 
+#[cfg(test)]
+mod fee_source_unification_tests;
+
 // #[cfg(test)]
 // mod event_creation_tests;
 
@@ -442,7 +445,7 @@ impl PredictifyHybrid {
 
         // Emit contract initialized and platform fee events
         EventEmitter::emit_contract_initialized(&env, &admin, fee_percentage);
-        EventEmitter::emit_platform_fee_set(&env, fee_percentage, &admin);
+        EventEmitter::emit_platform_fee_set(&env, fee_percentage, fee_percentage, &admin);
 
         Ok(())
     }
@@ -1887,20 +1890,16 @@ impl PredictifyHybrid {
             let winning_total = summary.winning_total;
 
             if winning_total > 0 {
-                // Retrieve dynamic platform fee percentage from configuration
-                let cfg = match crate::config::ConfigManager::get_config(&env) {
-                    Ok(c) => c,
-                    Err(_) => panic_with_error!(env, Error::ConfigNotFound),
-                };
-                let fee_percent = cfg.fees.platform_fee_percentage;
+                let fee_percent = fees::effective_fee_bps(&env, &market)
+                    .unwrap_or_else(|e| panic_with_error!(env, e));
                 let user_share = (user_stake
-                    .checked_mul(PERCENTAGE_DENOMINATOR as i128 - fee_percent as i128)
-                    .unwrap_or_else(|| panic_with_error!(env, Error::InvalidInput)))
-                    / (PERCENTAGE_DENOMINATOR as i128);
+                    .checked_mul(PERCENTAGE_DENOMINATOR - fee_percent)
+                    .unwrap_or_else(|| panic_with_error!(env, Error::Overflow)))
+                    / PERCENTAGE_DENOMINATOR;
                 let total_pool = summary.total_pool;
                 let product = user_share
                     .checked_mul(total_pool)
-                    .unwrap_or_else(|| panic_with_error!(env, Error::InvalidInput));
+                    .unwrap_or_else(|| panic_with_error!(env, Error::Overflow));
                 let payout = product / winning_total;
 
                 // Calculate fee amount for statistics
@@ -1919,18 +1918,13 @@ impl PredictifyHybrid {
                 // Gross = (user_stake * total_pool) / winning_total.
                 // Fee = Gross - Payout.
 
-                let gross_share = (user_stake
-                    .checked_mul(PERCENTAGE_DENOMINATOR)
-                    .unwrap_or_else(|| panic_with_error!(env, Error::InvalidInput)))
-                    / (PERCENTAGE_DENOMINATOR as i128);
-                // Wait, user_stake * 100 / 100 = user_stake.
-                // The math above used PERCENTAGE_DENOMINATOR (100).
-
                 let product_gross = user_stake
                     .checked_mul(total_pool)
-                    .unwrap_or_else(|| panic_with_error!(env, Error::InvalidInput));
+                    .unwrap_or_else(|| panic_with_error!(env, Error::Overflow));
                 let gross_payout = product_gross / winning_total;
-                let fee_amount = gross_payout - payout;
+                let fee_amount = gross_payout
+                    .checked_sub(payout)
+                    .unwrap_or_else(|| panic_with_error!(env, Error::Overflow));
 
                 statistics::StatisticsManager::record_winnings_claimed(&env, &user, payout);
                 statistics::StatisticsManager::record_fees_collected(&env, fee_amount);
@@ -2212,21 +2206,7 @@ impl PredictifyHybrid {
             return Err(Error::SweepAlreadyDone);
         }
 
-        let fee_percent = crate::config::ConfigManager::get_config(&env)
-            .map(|cfg| cfg.fees.platform_fee_percentage)
-            .unwrap_or_else(|_| {
-                // Use the short platform fee key (backwards-compat fallback to legacy long keys
-                // is not possible here because Soroban restricts symbols to <=9 chars).
-                // If you need to read old on-chain keys created with long symbols,
-                // perform a storage migration on-chain (one-time) to move legacy values
-                // under the new short key.
-                let new_key = Symbol::new(&env, "platform_fee");
-                env.storage().persistent().get(&new_key).unwrap_or(2)
-            });
-
-        if fee_percent < 0 || fee_percent > PERCENTAGE_DENOMINATOR {
-            return Err(Error::InvalidFeeConfig);
-        }
+        let fee_percent = fees::effective_fee_bps(&env, &market)?;
 
         let summary = resolution::ResolutionOutcomeCache::require(&env, &market_id, &market)?;
         let winning_total = summary.winning_total;
@@ -2258,12 +2238,12 @@ impl PredictifyHybrid {
             }
 
             let user_share = user_stake
-                .checked_mul(PERCENTAGE_DENOMINATOR as i128 - fee_percent as i128)
+                .checked_mul(PERCENTAGE_DENOMINATOR - fee_percent)
                 .ok_or(Error::InvalidInput)?
-                / (PERCENTAGE_DENOMINATOR as i128);
+                / PERCENTAGE_DENOMINATOR;
             let payout = user_share
                 .checked_mul(total_pool)
-                .ok_or(Error::InvalidInput)?
+                .ok_or(Error::Overflow)?
                 / winning_total;
 
             if payout < 0 {
@@ -2273,7 +2253,7 @@ impl PredictifyHybrid {
             market
                 .claimed
                 .set(user.clone(), ClaimInfo::new(&env, payout, 0u64));
-            swept_total = swept_total.checked_add(payout).ok_or(Error::InvalidInput)?;
+            swept_total = swept_total.checked_add(payout).ok_or(Error::Overflow)?;
         }
 
         for user in bettors.iter() {
@@ -2304,12 +2284,12 @@ impl PredictifyHybrid {
 
             let user_share = bet
                 .amount
-                .checked_mul(PERCENTAGE_DENOMINATOR as i128 - fee_percent as i128)
-                .ok_or(Error::InvalidInput)?
-                / (PERCENTAGE_DENOMINATOR as i128);
+                .checked_mul(PERCENTAGE_DENOMINATOR - fee_percent)
+                .ok_or(Error::Overflow)?
+                / PERCENTAGE_DENOMINATOR;
             let payout = user_share
                 .checked_mul(total_pool)
-                .ok_or(Error::InvalidInput)?
+                .ok_or(Error::Overflow)?
                 / winning_total;
 
             if payout < 0 {
@@ -2319,7 +2299,7 @@ impl PredictifyHybrid {
             market
                 .claimed
                 .set(user.clone(), ClaimInfo::new(&env, payout, 0u64));
-            swept_total = swept_total.checked_add(payout).ok_or(Error::InvalidInput)?;
+            swept_total = swept_total.checked_add(payout).ok_or(Error::Overflow)?;
         }
 
         let recipient = if burn {
@@ -4408,12 +4388,7 @@ impl PredictifyHybrid {
         // ── Load bettor registry ───────────────────────────────────────────────
         let bettors = BetStorage::get_all_bets_for_market(&env, &market_id);
 
-        // ── Platform fee (basis points, default 200 = 2%) ─────────────────────
-        let fee_percent: i128 = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "platform_fee"))
-            .unwrap_or(200);
+        let fee_percent = fees::effective_fee_bps(&env, &market)?;
 
         // ── Short-circuit: check whether any unclaimed winners exist ───────────
         let mut has_unclaimed_winners = false;
@@ -4463,7 +4438,7 @@ impl PredictifyHybrid {
         }
 
         let total_pool = summary.total_pool;
-        let fee_denominator = 10_000i128;
+        let fee_denominator = PERCENTAGE_DENOMINATOR;
         let mut total_distributed: i128 = 0;
 
         // ── Budget guard: abort before host runs out of CPU instructions ───────
@@ -4493,12 +4468,12 @@ impl PredictifyHybrid {
                 if user_stake > 0 {
                     let user_share = (user_stake
                         .checked_mul(fee_denominator - fee_percent)
-                        .ok_or(Error::InvalidInput)?)
+                            .ok_or(Error::Overflow)?)
                         / fee_denominator;
 
                     let payout = (user_share
                         .checked_mul(total_pool)
-                        .ok_or(Error::InvalidInput)?)
+                            .ok_or(Error::Overflow)?)
                         / winning_total;
 
                     if payout >= 0 {
@@ -4509,7 +4484,7 @@ impl PredictifyHybrid {
                         if payout > 0 {
                             total_distributed = total_distributed
                                 .checked_add(payout)
-                                .ok_or(Error::InvalidInput)?;
+                                .ok_or(Error::Overflow)?;
 
                             BalanceStorage::add_balance(
                                 &env,
@@ -4552,12 +4527,12 @@ impl PredictifyHybrid {
                     } else if bet.amount > 0 {
                         let user_share = (bet.amount
                             .checked_mul(fee_denominator - fee_percent)
-                            .ok_or(Error::InvalidInput)?)
+                            .ok_or(Error::Overflow)?)
                             / fee_denominator;
 
                         let payout = (user_share
                             .checked_mul(total_pool)
-                            .ok_or(Error::InvalidInput)?)
+                            .ok_or(Error::Overflow)?)
                             / winning_total;
 
                         if payout > 0 {
@@ -4567,7 +4542,7 @@ impl PredictifyHybrid {
 
                             total_distributed = total_distributed
                                 .checked_add(payout)
-                                .ok_or(Error::InvalidInput)?;
+                                .ok_or(Error::Overflow)?;
 
                             bet.status = BetStatus::Won;
                             let _ = BetStorage::store_bet(&env, &bet);
@@ -4798,9 +4773,25 @@ impl PredictifyHybrid {
             return Err(Error::InvalidFeeConfig);
         }
 
-        // Update fee in legacy storage
+        let mut config = ConfigManager::get_config(&env)?;
+        let old_fee_percentage = if config.fees.fees_enabled {
+            config.fees.platform_fee_percentage
+        } else {
+            0
+        };
+        config.fees.platform_fee_percentage = fee_percentage;
+        ConfigManager::update_config(&env, &config)?;
+
+        // Keep the legacy value synchronized for pre-upgrade readers.
         let fee_key = Symbol::new(&env, "platform_fee");
         env.storage().persistent().set(&fee_key, &fee_percentage);
+
+        EventEmitter::emit_platform_fee_set(
+            &env,
+            old_fee_percentage,
+            fee_percentage,
+            &admin,
+        );
 
         crate::audit_trail::AuditTrailManager::append_record(
             &env,
