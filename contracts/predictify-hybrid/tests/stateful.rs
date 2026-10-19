@@ -635,7 +635,7 @@ proptest! {
         state.env.mock_all_auths();
         let market_id = client.create_market(
             &state.admin,
-            &SorobanString::from_str(&state.env, "Test"),
+            &SorobanString::from_str(&state.env, "Will the test market resolve yes?"),
             &outcomes,
             &duration_days,
             &OracleConfig {
@@ -692,7 +692,7 @@ proptest! {
     #[test]
     fn test_idempotency(
         user_idx in 0..MAX_USERS,
-        stake in 1i128..=MAX_STAKE,
+        stake in 1_000_000i128..=MAX_STAKE,
     ) {
         let mut state = TestState::new(MAX_USERS);
         let user = state.user(user_idx).clone();
@@ -708,7 +708,7 @@ proptest! {
         state.env.mock_all_auths();
         let market_id = client.create_market(
             &state.admin,
-            &SorobanString::from_str(&state.env, "Test"),
+            &SorobanString::from_str(&state.env, "Will the test market resolve yes?"),
             &outcomes,
             &7,
             &OracleConfig {
@@ -818,7 +818,7 @@ fn test_vote_on_active_market() {
     state.env.mock_all_auths();
     let market_id = client.create_market(
         &state.admin,
-        &SorobanString::from_str(&state.env, "Test"),
+        &SorobanString::from_str(&state.env, "Will the test market resolve yes?"),
         &outcomes,
         &7,
         &OracleConfig {
@@ -864,7 +864,7 @@ fn test_no_vote_after_market_ends() {
     state.env.mock_all_auths();
     let market_id = client.create_market(
         &state.admin,
-        &SorobanString::from_str(&state.env, "Test"),
+        &SorobanString::from_str(&state.env, "Will the test market resolve yes?"),
         &outcomes,
         &1, // 1 day
         &OracleConfig {

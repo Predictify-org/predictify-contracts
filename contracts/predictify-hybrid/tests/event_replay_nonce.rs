@@ -30,7 +30,8 @@ fn test_event_replay_nonce_monotonic() {
         EventEmitter::emit_market_created(&env, &market_id, &question, &outcomes, &admin, 1000);
 
         let events = env.events().all();
-        assert_eq!(events.events().len(), 1);
+        // Both the legacy and market-scoped topics carry the same nonce.
+        assert_eq!(events.events().len(), 2);
 
         let key = DataKey::EventNonce(symbol_short!("mkt_crt"));
         let nonce: u64 = env.storage().persistent().get(&key).unwrap();
@@ -40,7 +41,7 @@ fn test_event_replay_nonce_monotonic() {
         EventEmitter::emit_market_created(&env, &market_id, &question, &outcomes, &admin, 1000);
 
         let events = env.events().all();
-        assert_eq!(events.events().len(), 2);
+        assert_eq!(events.events().len(), 4);
 
         let nonce2: u64 = env.storage().persistent().get(&key).unwrap();
         assert_eq!(nonce2, 2);
