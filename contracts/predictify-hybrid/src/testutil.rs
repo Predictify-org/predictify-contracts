@@ -42,3 +42,12 @@ impl TestCtx {
         user
     }
 }
+
+#[test]
+fn storage_writes_are_visible_through_client() {
+    use crate::{storage::BalanceStorage, types::ReflectorAsset};
+    let ctx = TestCtx::new();
+    let user = ctx.funded_user(100);
+    ctx.with_contract(|| BalanceStorage::add_balance(&ctx.env, &user, &ReflectorAsset::Stellar, 42).unwrap());
+    assert_eq!(ctx.client().get_balance(&user, &ReflectorAsset::Stellar).amount, 42);
+}
