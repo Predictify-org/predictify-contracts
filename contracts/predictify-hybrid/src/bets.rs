@@ -1991,10 +1991,11 @@ mod tests {
         );        });
     }
 
-    #[ignore]
     #[test]
     fn test_fee_slippage_guard_fallback_storage() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         // Store platform fee in legacy storage key (used when ConfigManager fails)
         env.storage()
             .persistent()
@@ -2007,7 +2008,7 @@ mod tests {
         assert_eq!(
             BetValidator::validate_fee_slippage(&env, 200),
             Err(Error::FeeExceedsMax)
-        );
+        );        });
     }
 
     #[ignore]
