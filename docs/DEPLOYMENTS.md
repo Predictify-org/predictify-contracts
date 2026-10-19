@@ -11,7 +11,7 @@
 | Deploy tx | https://stellar.expert/explorer/testnet/tx/8ec2ad92f7cf236c46df942b4812d3d5619934e369d4a7f81c18f6763b9193c0 |
 | Admin / deployer | `GBAW5Y35LFQJLHVIABW2CWGCRPZXKM7MN3UNAYWQXKDJI4LM2NYGWYZL` |
 | Platform fee | 2% |
-| WASM | slim build, 128,890 bytes (limit 131,072) |
+| WASM | slim build, 128,890 bytes (limit 131,072) — **affected by the unauthenticated rate-limiter exports; must be redeployed (or upgraded once the slim-build upgrade path exists)** |
 | Initialized | yes (`initialize`, admin = deployer, fee 2, default assets) |
 
 Sample market created as a smoke test: id `mkt_5cae97f9_0` ("Will BTC trade above $100,000 within 30 days?", outcomes `yes`/`no`), create tx https://stellar.expert/explorer/testnet/tx/5f4b41e96c859533432a95c8a0bf6a62bf1a7fd0b8e7d6cacb7b26b10ab40f69
@@ -36,7 +36,11 @@ Both steps are in `scripts/build_testnet_wasm.sh`.
 
 ### Exposed entry points (slim build)
 
-`initialize`, `deposit`, `withdraw`, `get_balance`, `create_market`, `create_event`, `get_event`, `get_market`, `get_all_markets_paged`, `vote`, `place_bet`, `get_bet`, `has_user_bet`, `get_market_bet_stats`, `resolve_market_manual`, `resolve_market`, `dispute_market`, `claim_winnings`, `distribute_payouts`, `collect_fees`, `set_platform_fee`, `cancel_event`, `get_contract_version`, `capabilities`, plus the rate-limiter functions.
+`initialize`, `deposit`, `withdraw`, `get_balance`, `create_market`, `create_event`, `get_event`, `get_market`, `get_all_markets_paged`, `vote`, `place_bet`, `get_bet`, `has_user_bet`, `get_market_bet_stats`, `resolve_market_manual`, `resolve_market`, `dispute_market`, `claim_winnings`, `distribute_payouts`, `collect_fees`, `set_platform_fee`, `cancel_event`, `get_contract_version`, `capabilities`, `update_rate_limits`, `get_rate_limit_status`.
+
+The standalone `RateLimiterContract` surface (`init_rate_limiter`, `check_voting_rate_limit`, `check_dispute_rate_limit`, `check_oracle_rate_limit`, `check_admin_event_rate_limit`, `validate_rate_limit_config`) is no longer exported. Rate-limit configuration is changed only through the admin-gated `update_rate_limits`, and `get_rate_limit_status` is read-only.
+
+> **Note:** the currently deployed testnet contract (`CCWRJXIUBSMFQ4AF2RXXH3AFBW6MEZG4GK4IYES7C4Z3X4PR6K7VAFHC`) still exposes the unauthenticated rate-limiter entry points and is affected by this bug. It must be redeployed with this fix, or upgraded once the slim-build upgrade path exists.
 
 ## Reproduce
 
