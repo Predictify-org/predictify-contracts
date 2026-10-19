@@ -2238,9 +2238,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_bet_analytics_payout_multiplier_with_data() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let market_id = Symbol::new(&env, "mkt_mult");
         let yes = String::from_str(&env, "yes");
 
@@ -2257,7 +2258,7 @@ mod tests {
         assert_eq!(
             BetAnalytics::calculate_payout_multiplier(&env, &market_id, &yes),
             500
-        );
+        );        });
     }
 
     #[test]
