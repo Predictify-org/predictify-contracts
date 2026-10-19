@@ -2030,13 +2030,14 @@ mod tests {
     // ===== FOCUSED TESTS FOR DOCUMENTED FUNCTIONS =====
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_get_effective_bet_limits_returns_defaults_when_empty() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let market_id = Symbol::new(&env, "mkt_no_limits");
         let limits = get_effective_bet_limits(&env, &market_id);
         assert_eq!(limits.min_bet, MIN_BET_AMOUNT);
-        assert_eq!(limits.max_bet, MAX_BET_AMOUNT);
+        assert_eq!(limits.max_bet, MAX_BET_AMOUNT);        });
     }
 
     #[test]
