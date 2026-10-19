@@ -169,17 +169,20 @@ pub mod capability {
 ///     // the betting subsystem is available
 /// }
 /// ```
+///
+/// # Build-dependent capabilities
+///
+/// The slim build (`default` features) does not export the analytics,
+/// dispute, governance, monitoring or upgrade-management entry points, so
+/// those bits are cleared when the `full` feature is disabled.  Clients
+/// probing a slim deployment therefore get an accurate answer.
 pub fn capabilities(_env: &Env) -> u64 {
-    capability::VERSIONING
-        | capability::UPGRADE_MANAGEMENT
+    // Capabilities that are always exported, regardless of build flavour.
+    let mut caps = capability::VERSIONING
         | capability::QUERY_FUNCTIONS
         | capability::MARKET_MANAGEMENT
         | capability::BETTING
-        | capability::DISPUTES
         | capability::ORACLE_INTEGRATION
-        | capability::GOVERNANCE
-        | capability::ANALYTICS
-        | capability::MONITORING
         | capability::FEE_MANAGEMENT
         | capability::AUDIT_TRAIL
         | capability::CIRCUIT_BREAKER
@@ -195,7 +198,19 @@ pub fn capabilities(_env: &Env) -> u64 {
         | capability::CLAIM_IDEMPOTENCY
         | capability::BET_CANCELLATION
         | capability::FEE_WITHDRAWAL
-        | capability::PAYOUT_DISTRIBUTION
+        | capability::PAYOUT_DISTRIBUTION;
+
+    // Features only exported by the `full` build.  The slim build omits the
+    // corresponding entry points, so advertising them would mislead clients.
+    if cfg!(feature = "full") {
+        caps |= capability::UPGRADE_MANAGEMENT
+            | capability::DISPUTES
+            | capability::GOVERNANCE
+            | capability::ANALYTICS
+            | capability::MONITORING;
+    }
+
+    caps
 }
 
 /// Compute a capabilities bitmask for a given contract version.
@@ -225,14 +240,33 @@ mod tests {
 
         assert!(caps & capability::VERSIONING != 0, "versioning");
         assert!(caps & capability::BETTING != 0, "betting");
-        assert!(caps & capability::DISPUTES != 0, "disputes");
         assert!(caps & capability::ORACLE_INTEGRATION != 0, "oracle-integration");
-        assert!(caps & capability::GOVERNANCE != 0, "governance");
-        assert!(caps & capability::ANALYTICS != 0, "analytics");
         assert!(caps & capability::MARKET_MANAGEMENT != 0, "market-management");
         assert!(caps & capability::QUERY_FUNCTIONS != 0, "query-functions");
         assert!(caps & capability::FEE_MANAGEMENT != 0, "fee-management");
         assert!(caps & capability::AUDIT_TRAIL != 0, "audit-trail");
+    }
+
+    /// Verify that full-only capabilities follow the `full` feature flag.
+    ///
+    /// On the slim build these bits must be clear; on the `full` build they
+    /// must be set.  This is the regression proof for the slim bitmap.
+    #[test]
+    fn test_full_only_capabilities_follow_feature_flag() {
+        let env = Env::default();
+        let caps = capabilities(&env);
+
+        let full_only = capability::UPGRADE_MANAGEMENT
+            | capability::DISPUTES
+            | capability::GOVERNANCE
+            | capability::ANALYTICS
+            | capability::MONITORING;
+
+        if cfg!(feature = "full") {
+            assert_eq!(caps & full_only, full_only, "full build advertises full-only features");
+        } else {
+            assert_eq!(caps & full_only, 0, "slim build must not advertise full-only features");
+        }
     }
 
     /// Verify no undefined bits beyond the last defined are set.
