@@ -183,8 +183,9 @@ fn payout_remainder_is_conserved() {
 
     advance_ledger(&env, 31 * 24 * 60 * 60);
     client.resolve_market_manual(&admin, &market, &String::from_str(&env, "yes"));
-    // Bets use batch distribution, which credits withdrawable internal balances.
-    let distributed = client.distribute_payouts(&market);
+    // Manual resolution automatically distributes into withdrawable balances.
+    let distributed = client.get_balance(&user, &ReflectorAsset::Stellar).amount
+        + client.get_balance(&user2, &ReflectorAsset::Stellar).amount;
     assert_eq!(distributed, 97_999_999);
     let fee = client.collect_fees(&admin, &market);
     assert_eq!(fee, 2_000_000);
