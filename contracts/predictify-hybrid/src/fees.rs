@@ -667,7 +667,7 @@ pub struct FeeBreakdown {
 /// # let market_id = Symbol::new(&env, "btc_market");
 ///
 /// // Collect fees from a resolved market
-/// let collected_amount = FeeManager::collect_fees(
+/// let collected_amount = FeeManager::collect_fees_authorized(
 ///     &env,
 ///     admin.clone(),
 ///     market_id.clone()
@@ -716,13 +716,11 @@ pub struct FeeManager;
 
 impl FeeManager {
     /// Collect platform fees from a market
-    pub fn collect_fees(env: &Env, admin: Address, market_id: Symbol) -> Result<i128, Error> {
-        // Require authentication from the admin
-        // Note: admin.require_auth() causes "Error(Auth, ExistingValue)" panic in tests with mock_all_auths
-        // We disable it for tests but keep it for production safety.
-        #[cfg(not(test))]
-        admin.require_auth();
-
+    pub(crate) fn collect_fees_authorized(
+        env: &Env,
+        admin: Address,
+        market_id: Symbol,
+    ) -> Result<i128, Error> {
         // Validate admin permissions
         FeeValidator::validate_admin_permissions(env, &admin)?;
 

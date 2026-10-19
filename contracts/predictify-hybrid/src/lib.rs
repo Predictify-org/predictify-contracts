@@ -114,6 +114,8 @@ mod balance_tests;
 
 #[cfg(test)]
 mod event_management_tests;
+#[cfg(test)]
+mod single_frame_auth_tests;
 
 #[cfg(any())]
 mod category_tags_tests;
@@ -2598,7 +2600,7 @@ impl PredictifyHybrid {
         reason: Option<String>,
     ) -> Result<(), Error> {
         user.require_auth();
-        disputes::DisputeManager::process_dispute(&env, user, market_id, stake, reason)
+        disputes::DisputeManager::process_dispute_authorized(&env, user, market_id, stake, reason)
     }
 
     /// Vote on a dispute
@@ -2620,7 +2622,7 @@ impl PredictifyHybrid {
         reason: Option<String>,
     ) -> Result<(), Error> {
         user.require_auth();
-        disputes::DisputeManager::vote_on_dispute(
+        disputes::DisputeManager::vote_on_dispute_authorized(
             &env, user, market_id, dispute_id, vote, stake, reason,
         )
     }
@@ -2654,7 +2656,7 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
-        disputes::DisputeManager::resolve_dispute(&env, market_id, admin)
+        disputes::DisputeManager::resolve_dispute_authorized(&env, market_id, admin)
     }
 
     /// Collect fees from a market (admin only)
@@ -2682,7 +2684,7 @@ impl PredictifyHybrid {
             panic_with_error!(env, Error::Unauthorized);
         }
 
-        fees::FeeManager::collect_fees(&env, admin, market_id)
+        fees::FeeManager::collect_fees_authorized(&env, admin, market_id)
     }
 
     /// Automatically distribute payouts to all winners after market resolution.

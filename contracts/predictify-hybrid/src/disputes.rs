@@ -53,7 +53,7 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol,
 /// 2. **Community Voting**: Other users vote on dispute validity
 /// 3. **Resolution**: Dispute is resolved based on community consensus
 /// 4. **Stake Refund**: If the dispute overturns the oracle result, every
-///    disputer's locked stake is returned in full (see [`DisputeManager::resolve_dispute`]).
+///    disputer's locked stake is returned in full (see [`DisputeManager::resolve_dispute_authorized`]).
 /// 5. **Fee Distribution**: Any remaining stakes are distributed to the winning side
 ///
 /// # Staking Requirements
@@ -699,7 +699,7 @@ pub struct TimeoutAnalytics {
 /// # let market_id = Symbol::new(&env, "market_123");
 ///
 /// // User disputes a market result
-/// let result = DisputeManager::process_dispute(
+/// let result = DisputeManager::process_dispute_authorized(
 ///     &env,
 ///     user.clone(),
 ///     market_id.clone(),
@@ -708,7 +708,7 @@ pub struct TimeoutAnalytics {
 /// );
 ///
 /// // Admin resolves the dispute after community voting
-/// let resolution = DisputeManager::resolve_dispute(
+/// let resolution = DisputeManager::resolve_dispute_authorized(
 ///     &env,
 ///     market_id.clone(),
 ///     admin.clone()
@@ -764,7 +764,7 @@ impl DisputeManager {
     /// # let market_id = Symbol::new(&env, "btc_price_market");
     ///
     /// // User disputes oracle result with reasoning
-    /// let result = DisputeManager::process_dispute(
+    /// let result = DisputeManager::process_dispute_authorized(
     ///     &env,
     ///     user.clone(),
     ///     market_id.clone(),
@@ -802,16 +802,13 @@ impl DisputeManager {
     /// - Validates market state to ensure disputes are only allowed when appropriate
     /// - Enforces minimum stake requirements to prevent spam
     /// - Checks for duplicate disputes from the same user
-    pub fn process_dispute(
+    pub(crate) fn process_dispute_authorized(
         env: &Env,
         user: Address,
         market_id: Symbol,
         stake: i128,
         reason: Option<String>,
     ) -> Result<(), Error> {
-        // Require authentication from the user
-        user.require_auth();
-
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
         DisputeValidator::validate_market_for_dispute(env, &market)?;
@@ -922,7 +919,7 @@ impl DisputeManager {
     /// # let market_id = Symbol::new(&env, "disputed_market");
     ///
     /// // Admin resolves dispute after voting period
-    /// let resolution = DisputeManager::resolve_dispute(
+    /// let resolution = DisputeManager::resolve_dispute_authorized(
     ///     &env,
     ///     market_id.clone(),
     ///     admin.clone()
@@ -972,14 +969,11 @@ impl DisputeManager {
     /// - Correct application of resolution algorithms
     /// - Appropriate handling of edge cases
     /// - Consistent resolution quality across markets
-    pub fn resolve_dispute(
+    pub(crate) fn resolve_dispute_authorized(
         env: &Env,
         market_id: Symbol,
         admin: Address,
     ) -> Result<DisputeResolution, Error> {
-        // Require authentication from the admin
-        admin.require_auth();
-
         // Validate admin permissions
         DisputeValidator::validate_admin_permissions(env, &admin)?;
 
@@ -1360,7 +1354,7 @@ impl DisputeManager {
     /// # let dispute_id = Symbol::new(&env, "dispute_456");
     ///
     /// // Vote to support the dispute
-    /// let result = DisputeManager::vote_on_dispute(
+    /// let result = DisputeManager::vote_on_dispute_authorized(
     ///     &env,
     ///     voter.clone(),
     ///     market_id.clone(),
@@ -1377,7 +1371,7 @@ impl DisputeManager {
     ///
     /// // Vote to reject the dispute
     /// let other_voter = Address::generate(&env);
-    /// let reject_result = DisputeManager::vote_on_dispute(
+    /// let reject_result = DisputeManager::vote_on_dispute_authorized(
     ///     &env,
     ///     other_voter,
     ///     market_id,
@@ -1418,7 +1412,7 @@ impl DisputeManager {
     /// - Stake amounts reflect voter confidence
     /// - Economic penalties discourage frivolous voting
     /// - Proportional rewards based on stake size
-    pub fn vote_on_dispute(
+    pub(crate) fn vote_on_dispute_authorized(
         env: &Env,
         user: Address,
         market_id: Symbol,
@@ -1427,9 +1421,6 @@ impl DisputeManager {
         stake: i128,
         reason: Option<String>,
     ) -> Result<(), Error> {
-        // Require authentication from the user
-        user.require_auth();
-
         // Validate dispute voting conditions
         DisputeValidator::validate_dispute_voting_conditions(env, &market_id, &dispute_id)?;
 
@@ -3016,15 +3007,22 @@ mod tests {
 
             let initial_balance = token_client.balance(&user);
             let stake = MIN_DISPUTE_STAKE;
-            DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), stake, None)
+            DisputeManager::process_dispute_authorized(
+                &env,
+                user.clone(),
+                market_id.clone(),
+                stake,
+                None,
+            )
                 .unwrap();
 
             let balance_after_dispute = token_client.balance(&user);
             assert_eq!(balance_after_dispute, initial_balance - stake);
 
             let contract_balance_before_refund = token_client.balance(&env.current_contract_address());
-            let resolution = DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone())
-                .unwrap();
+            let resolution =
+                DisputeManager::resolve_dispute_authorized(&env, market_id.clone(), admin.clone())
+                    .unwrap();
 
             assert_eq!(resolution.final_outcome, String::from_str(&env, "no"));
             let balance_after_refund = token_client.balance(&user);
@@ -3158,7 +3156,7 @@ mod tests {
             let initial_balance = token_client.balance(&disputer);
             let stake = MIN_DISPUTE_STAKE;
 
-            DisputeManager::process_dispute(
+            DisputeManager::process_dispute_authorized(
                 &env,
                 disputer.clone(),
                 market_id.clone(),
@@ -3175,7 +3173,7 @@ mod tests {
             );
 
             let resolution =
-                DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone())
+                DisputeManager::resolve_dispute_authorized(&env, market_id.clone(), admin.clone())
                     .unwrap();
 
             // The oracle result was NOT overturned.
@@ -3269,7 +3267,7 @@ mod tests {
             MarketStateManager::update_market(&env, &market_id, &market);
 
             let resolution =
-                DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone())
+                DisputeManager::resolve_dispute_authorized(&env, market_id.clone(), admin.clone())
                     .unwrap();
 
             // The oracle result should have been overturned by community consensus.
@@ -3378,7 +3376,7 @@ mod tests {
             MarketStateManager::update_market(&env, &market_id, &market);
 
             let resolution =
-                DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone())
+                DisputeManager::resolve_dispute_authorized(&env, market_id.clone(), admin.clone())
                     .unwrap();
 
             assert_eq!(
@@ -3463,7 +3461,7 @@ mod tests {
 
             // First resolution — should succeed and issue a refund.
             let resolution =
-                DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone())
+                DisputeManager::resolve_dispute_authorized(&env, market_id.clone(), admin.clone())
                     .unwrap();
             assert_eq!(resolution.final_outcome, String::from_str(&env, "no"));
 
