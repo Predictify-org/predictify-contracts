@@ -1006,33 +1006,94 @@ impl RecoveryManager {
 
     /// Execute partial refunds for selected users. This is privileged and requires the caller
     /// to be admin. Refund actions are fully recorded via events including the `actor` address.
+ /// Maximum users processed in one partial-refund call (CPU budget bound).
+    pub const PARTIAL_REFUND_USER_CAP: u32 = 50;
+
+    /// Execute partial refunds for selected users on a broken/unresolved market.
+    ///
+    /// Credits each user's internal Stellar balance by their stake (same model as
+    /// `claim_winnings`), marks them claimed, zeros their stake, updates bet status
+    /// to `Refunded`, and is idempotent for already-refunded users.
     pub fn partial_refund_mechanism(
         env: &Env,
         actor: &Address,
         market_id: &Symbol,
         users: &Vec<Address>,
     ) -> Result<i128, Error> {
-        // ensure caller is admin
         Self::assert_is_admin(env, actor)?;
 
+        if users.len() > Self::PARTIAL_REFUND_USER_CAP {
+            return Err(Error::InvalidInput);
+        }
+
         let mut market = MarketStateManager::get_market(env, market_id)?;
+
+        // State gate: do not refund on markets that already paid out / closed.
+        match market.state {
+            MarketState::Resolved | MarketState::Closed | MarketState::Archived => {
+                return Err(Error::InvalidState);
+            }
+            _ => {}
+        }
+
         let mut total_refunded: i128 = 0;
+        let mut users_refunded: u32 = 0;
 
         for user in users.iter() {
-            if let Some(stake) = market.stakes.get(user.clone()) {
-                if stake > 0 {
-                    // For now just mark claimed and reduce total; real implementation would transfer tokens
-                    market
-                        .claimed
-                        .set(user.clone(), crate::types::ClaimInfo::new(env, stake, 0u64));
-                    market.total_staked = market.total_staked - stake;
-                    total_refunded += stake;
+            // Idempotent: already claimed/refunded → skip
+            if let Some(info) = market.claimed.get(user.clone()) {
+                if info.is_claimed() {
+                    continue;
+                }
+            }
+
+            let stake = match market.stakes.get(user.clone()) {
+                Some(s) if s > 0 => s,
+                _ => continue, // no stake → skip, no error
+            };
+
+            // Credit internal balance (claim_winnings pattern)
+            crate::storage::BalanceStorage::add_balance(
+                env,
+                &user,
+                &crate::types::ReflectorAsset::Stellar,
+                stake,
+            )?;
+
+            // Mark claimed with refunded amount
+            market
+                .claimed
+                .set(user.clone(), ClaimInfo::new(env, stake, 0u64));
+
+            // Remove stake so a second call cannot double-count
+            market.stakes.remove(user.clone());
+            market.votes.remove(user.clone());
+
+            market.total_staked = market
+                .total_staked
+                .checked_sub(stake)
+                .ok_or(Error::InvalidInput)?;
+
+            total_refunded = total_refunded
+                .checked_add(stake)
+                .ok_or(Error::InvalidInput)?;
+            users_refunded = users_refunded
+                .checked_add(1)
+                .ok_or(Error::InvalidInput)?;
+
+            // Bet record → Refunded when present
+            if let Some(mut bet) =
+                crate::bets::BetStorage::get_bet(env, market_id, &user)
+            {
+                if bet.is_active() {
+                    bet.status = crate::types::BetStatus::Refunded;
+                    crate::bets::BetStorage::store_bet(env, &bet)?;
                 }
             }
         }
+
         MarketStateManager::update_market(env, market_id, &market);
 
-        // Update recovery record
         let mut rec = RecoveryStorage::load(env, market_id).unwrap_or(MarketRecovery {
             market_id: market_id.clone(),
             actions: Vec::new(env),
@@ -1041,11 +1102,15 @@ impl RecoveryManager {
             partial_refund_total: 0,
             last_action: None,
         });
-        rec.partial_refund_total += total_refunded;
+        rec.partial_refund_total = rec
+            .partial_refund_total
+            .checked_add(total_refunded)
+            .ok_or(Error::InvalidInput)?;
         rec.actions
             .push_back(String::from_str(env, "partial_refund"));
         rec.last_action = Some(String::from_str(env, "partial_refund"));
         RecoveryStorage::save(env, &rec);
+
         EventEmitter::emit_recovery_event(
             env,
             actor,
@@ -1054,6 +1119,10 @@ impl RecoveryManager {
             &String::from_str(env, "executed"),
             Some(total_refunded),
         );
+
+        // Budget signal at cap path is enforced via InvalidInput above;
+        // successful path returns actual refunded total (0 on full skip/idempotent).
+        let _ = users_refunded;
         Ok(total_refunded)
     }
 }
