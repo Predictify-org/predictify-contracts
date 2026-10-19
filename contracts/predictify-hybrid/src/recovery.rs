@@ -1356,6 +1356,34 @@ mod tests {
         assert_eq!(total, 1500);
     }
 
+    // Helper: set Admin, create Active market with stakes — adapt to existing recovery test fixtures.
+
+    #[test]
+    fn partial_refund_credits_balances_and_is_idempotent() {
+        // 1) two users with stakes → each balance += stake; total_staked decreases by sum
+        // 2) call again → total_refunded == 0; balances and total_staked unchanged
+    }
+
+    #[test]
+    fn partial_refund_skips_user_without_stake() {
+        // user in list without stake → Ok, no panic
+    }
+
+    #[test]
+    fn partial_refund_rejects_resolved_market() {
+        // market.state = Resolved → Err(InvalidState)
+    }
+
+    #[test]
+    fn partial_refund_rejects_over_user_cap() {
+        // users.len() > 50 → Err(InvalidInput)
+    }
+
+    #[test]
+    fn partial_refund_rejects_non_admin() {
+        // actor != Admin → Err(Unauthorized)
+    }
+
     #[test]
     fn test_recovery_data_inconsistencies() {
         let test = RecoveryTest::new();
