@@ -2,9 +2,9 @@
 
 use soroban_sdk::{
     testutils::{Address as _, Events},
-    vec, symbol_short, Address, Env, String, Symbol,
+    vec, symbol_short, Address, Env, String,
 };
-use predictify_hybrid::events::{EventEmitter, MarketCreatedEvent};
+use predictify_hybrid::events::{EventEmitter};
 use predictify_hybrid::storage::DataKey;
 use predictify_hybrid::PredictifyHybrid;
 
@@ -30,7 +30,7 @@ fn test_event_replay_nonce_monotonic() {
         EventEmitter::emit_market_created(&env, &market_id, &question, &outcomes, &admin, 1000);
 
         let events = env.events().all();
-        assert_eq!(events.events().len(), 1);
+        assert_eq!(events.len(), 1);
 
         let key = DataKey::EventNonce(symbol_short!("mkt_crt"));
         let nonce: u64 = env.storage().persistent().get(&key).unwrap();
@@ -40,7 +40,7 @@ fn test_event_replay_nonce_monotonic() {
         EventEmitter::emit_market_created(&env, &market_id, &question, &outcomes, &admin, 1000);
 
         let events = env.events().all();
-        assert_eq!(events.events().len(), 2);
+        assert_eq!(events.len(), 2);
 
         let nonce2: u64 = env.storage().persistent().get(&key).unwrap();
         assert_eq!(nonce2, 2);
