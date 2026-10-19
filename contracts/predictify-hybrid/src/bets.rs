@@ -2113,9 +2113,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_set_event_bet_limits_persists_and_retrieves() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let market_id = Symbol::new(&env, "mkt_set");
         let limits = BetLimits {
             min_bet: 2_500_000,
@@ -2124,7 +2125,7 @@ mod tests {
         set_event_bet_limits(&env, &market_id, &limits).unwrap();
         let retrieved = get_effective_bet_limits(&env, &market_id);
         assert_eq!(retrieved.min_bet, 2_500_000);
-        assert_eq!(retrieved.max_bet, 25_000_000_000);
+        assert_eq!(retrieved.max_bet, 25_000_000_000);        });
     }
 
     #[test]
