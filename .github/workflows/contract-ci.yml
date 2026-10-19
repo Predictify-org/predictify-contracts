@@ -28,5 +28,9 @@ jobs:
           start=$SECONDS
           cargo test -p predictify-hybrid --tests
           echo "Integration test step: $((SECONDS - start)) seconds (includes lib rerun)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Test predictify-analytics
+        run: cargo test -p predictify-analytics
+      - name: Build analytics WASM (size budget)
+        run: ./scripts/build_analytics_wasm.sh
       - name: Slim (deployable) feature set compiles
         run: cargo check -p predictify-hybrid --no-default-features

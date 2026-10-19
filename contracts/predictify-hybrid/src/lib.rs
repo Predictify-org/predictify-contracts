@@ -52,6 +52,8 @@ mod reporting;
 // mod require_auth_coverage_tests;
 #[cfg(test)]
 mod resolution_event_ordering_tests;
+#[cfg(test)]
+mod oracle_resolution_tests;
 
 #[cfg(test)]
 #[path = "tests/oracle_validation_tests.rs"]
@@ -179,6 +181,8 @@ mod category_tags_tests;
 #[cfg(test)]
 mod tie_resolution_tests;
 #[cfg(test)]
+mod edge_case_surface_tests;
+#[cfg(test)]
 mod force_resolve_tests;
 // #[cfg(any())]
 // mod statistics_tests;
@@ -295,20 +299,39 @@ fn resolution_timeout_reached(env: &Env, market: &Market) -> bool {
     current_time >= market.end_time.saturating_add(market.resolution_timeout)
 }
 
-/// Probe an oracle for an automatic result; `Err(OracleUnavailable)` when inactive.
-fn automatic_oracle_result_unavailable(
+/// Query the configured oracle for `market` and return the winning outcome.
+///
+/// The Reflector price is compared against the market threshold; the resulting
+/// outcome must be one of the market's own outcomes. All failures are typed errors.
+fn get_oracle_result(
     env: &Env,
+    market_id: &Symbol,
+    market: &Market,
     config: &OracleConfig,
 ) -> Result<String, Error> {
-    if !config.is_active() {
-        return Err(Error::OracleUnavailable);
+    let outcome = oracles::OracleOutcomeResolver::resolve_outcome(env, market_id, config)?;
+    if !market.outcomes.contains(&outcome) {
+        return Err(Error::InvalidOutcome);
     }
-    Ok(String::from_str(env, "pending"))
+    Ok(outcome)
 }
 
-/// Probe an oracle for an automatic result; returns the raw oracle result string.
-fn get_oracle_result(env: &Env, config: &OracleConfig) -> Result<String, Error> {
-    automatic_oracle_result_unavailable(env, config)
+/// Persist a fetched oracle outcome and move the market `Active -> Ended` so it
+/// can be finalised by `resolve_market`.
+fn store_oracle_result(env: &Env, market_id: &Symbol, market: &mut Market, outcome: &String) {
+    market.oracle_result = Some(outcome.clone());
+    if market.state == MarketState::Active {
+        let old_state = market.state.clone();
+        market.state = MarketState::Ended;
+        EventEmitter::emit_state_change_event(
+            env,
+            market_id,
+            &old_state,
+            &MarketState::Ended,
+            &String::from_str(env, "Oracle result fetched"),
+        );
+    }
+    env.storage().persistent().set(market_id, market);
 }
 
 #[contract]
@@ -3066,17 +3089,15 @@ impl PredictifyHybrid {
             return Err(Error::ResolutionTimeoutReached);
         }
 
-        match get_oracle_result(&env, &market.oracle_config) {
+        match get_oracle_result(&env, &market_id, &market, &market.oracle_config) {
             Ok(outcome) => {
-                market.oracle_result = Some(outcome.clone());
-                env.storage().persistent().set(&market_id, &market);
+                store_oracle_result(&env, &market_id, &mut market, &outcome);
                 Ok(outcome)
             }
             Err(_) if market.has_fallback => {
-                match get_oracle_result(&env, &market.fallback_oracle_config) {
+                match get_oracle_result(&env, &market_id, &market, &market.fallback_oracle_config) {
                     Ok(outcome) => {
-                        market.oracle_result = Some(outcome.clone());
-                        env.storage().persistent().set(&market_id, &market);
+                        store_oracle_result(&env, &market_id, &mut market, &outcome);
                         EventEmitter::emit_fallback_used(
                             &env,
                             &market_id,
@@ -3608,10 +3629,33 @@ impl PredictifyHybrid {
             &Symbol::new(&env, "resolve_market_manual"),
         );
 
-        // Use the resolution module to resolve the market
-        // Temporarily disabled due to resolution module being disabled
-        // let _resolution = resolution::MarketResolutionManager::resolve_market(&env, &market_id)?;
-        // For now, just return success
+        // Return a typed error (rather than trapping inside the state machine) when
+        // an oracle result exists but the market is not in a resolvable state.
+        let pending: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+        if pending.winning_outcomes.is_none() && pending.oracle_result.is_some() {
+            markets::MarketStateLogic::check_function_access_for_state("resolve", pending.state)?;
+        }
+
+        let resolution = resolution::MarketResolutionManager::resolve_market(&env, &market_id)?;
+
+        let market: Market = env
+            .storage()
+            .persistent()
+            .get(&market_id)
+            .ok_or(Error::MarketNotFound)?;
+        if let Some(winning_outcomes) = market.winning_outcomes.as_ref() {
+            let _ = bets::BetManager::resolve_market_bets(&env, &market_id, winning_outcomes);
+        }
+        recovery::UnclaimedWinningsPolicy::set_claim_window_start_if_missing(
+            &env,
+            &market_id,
+            resolution.resolution_timestamp,
+        );
+        let _ = Self::distribute_payouts(env.clone(), market_id.clone());
 
         statistics::StatisticsManager::record_market_resolved(&env);
 
@@ -6539,29 +6583,19 @@ impl PredictifyHybrid {
 
     // ===== EDGE CASE HANDLING ENTRY POINTS =====
 
-    /// Handle zero stake scenario for a specific market
+    /// Implement tie-breaking mechanism for equal outcomes.
+    ///
+    /// Deterministic, documented rule: the lexicographically smallest outcome
+    /// label wins. Returns [`Error::InvalidInput`] for an empty `outcomes` list
+    /// (it never panics).
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    /// Returns [`Error::InvalidInput`] when `outcomes` is empty.
     ///
     /// # Events
     ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    #[cfg(feature = "full")]
-    pub fn handle_zero_stake_scenario(env: Env, market_id: Symbol) -> Result<(), Error> {
-        edge_cases::EdgeCaseHandler::handle_zero_stake_scenario(&env, market_id)
-    }
-
-    /// Implement tie-breaking mechanism for equal outcomes
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// Read-only; emits no events.
     #[cfg(feature = "full")]
     pub fn implement_tie_breaking_mechanism(
         env: Env,
@@ -6570,36 +6604,22 @@ impl PredictifyHybrid {
         edge_cases::EdgeCaseHandler::implement_tie_breaking_mechanism(&env, outcomes)
     }
 
-    /// Detect orphaned markets and return their IDs
+    /// Detect orphaned markets.
+    ///
+    /// Fails closed: the contract keeps no global market index, so markets
+    /// cannot be enumerated. Returns [`Error::InvalidState`] instead of a
+    /// misleading empty list.
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    /// Always returns [`Error::InvalidState`].
     ///
     /// # Events
     ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// Read-only; emits no events.
     #[cfg(feature = "full")]
     pub fn detect_orphaned_markets(env: Env) -> Result<Vec<Symbol>, Error> {
         edge_cases::EdgeCaseHandler::detect_orphaned_markets(&env)
-    }
-
-    /// Handle partial resolution with incomplete data
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    #[cfg(feature = "full")]
-    pub fn handle_partial_resolution(
-        env: Env,
-        market_id: Symbol,
-        partial_data: edge_cases::PartialData,
-    ) -> Result<(), Error> {
-        edge_cases::EdgeCaseHandler::handle_partial_resolution(&env, market_id, partial_data)
     }
 
     /// Validate edge case handling scenario
@@ -6617,20 +6637,6 @@ impl PredictifyHybrid {
         scenario: edge_cases::EdgeCaseScenario,
     ) -> Result<(), Error> {
         edge_cases::EdgeCaseHandler::validate_edge_case_handling(&env, scenario)
-    }
-
-    /// Run comprehensive edge case testing scenarios
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    #[cfg(feature = "full")]
-    pub fn test_edge_case_scenarios(env: Env) -> Result<(), Error> {
-        edge_cases::EdgeCaseHandler::test_edge_case_scenarios(&env)
     }
 
     /// Get comprehensive edge case statistics
