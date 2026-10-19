@@ -24,6 +24,9 @@ jobs:
       - name: Test predictify-hybrid
         run: cargo test -p predictify-hybrid --lib
       - name: Test predictify-hybrid integration targets
-        run: cargo test -p predictify-hybrid --tests
+        run: |
+          start=$SECONDS
+          cargo test -p predictify-hybrid --tests
+          echo "Integration test step: $((SECONDS - start)) seconds (includes lib rerun)" >> "$GITHUB_STEP_SUMMARY"
       - name: Slim (deployable) feature set compiles
         run: cargo check -p predictify-hybrid --no-default-features
