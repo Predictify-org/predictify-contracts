@@ -176,6 +176,8 @@ mod category_tags_tests;
 #[cfg(test)]
 mod tie_resolution_tests;
 #[cfg(test)]
+mod edge_case_surface_tests;
+#[cfg(test)]
 mod force_resolve_tests;
 // #[cfg(any())]
 // mod statistics_tests;
@@ -6533,29 +6535,19 @@ impl PredictifyHybrid {
 
     // ===== EDGE CASE HANDLING ENTRY POINTS =====
 
-    /// Handle zero stake scenario for a specific market
+    /// Implement tie-breaking mechanism for equal outcomes.
+    ///
+    /// Deterministic, documented rule: the lexicographically smallest outcome
+    /// label wins. Returns [`Error::InvalidInput`] for an empty `outcomes` list
+    /// (it never panics).
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    /// Returns [`Error::InvalidInput`] when `outcomes` is empty.
     ///
     /// # Events
     ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    #[cfg(feature = "full")]
-    pub fn handle_zero_stake_scenario(env: Env, market_id: Symbol) -> Result<(), Error> {
-        edge_cases::EdgeCaseHandler::handle_zero_stake_scenario(&env, market_id)
-    }
-
-    /// Implement tie-breaking mechanism for equal outcomes
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// Read-only; emits no events.
     #[cfg(feature = "full")]
     pub fn implement_tie_breaking_mechanism(
         env: Env,
@@ -6564,36 +6556,22 @@ impl PredictifyHybrid {
         edge_cases::EdgeCaseHandler::implement_tie_breaking_mechanism(&env, outcomes)
     }
 
-    /// Detect orphaned markets and return their IDs
+    /// Detect orphaned markets.
+    ///
+    /// Fails closed: the contract keeps no global market index, so markets
+    /// cannot be enumerated. Returns [`Error::InvalidState`] instead of a
+    /// misleading empty list.
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
+    /// Always returns [`Error::InvalidState`].
     ///
     /// # Events
     ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    /// Read-only; emits no events.
     #[cfg(feature = "full")]
     pub fn detect_orphaned_markets(env: Env) -> Result<Vec<Symbol>, Error> {
         edge_cases::EdgeCaseHandler::detect_orphaned_markets(&env)
-    }
-
-    /// Handle partial resolution with incomplete data
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    #[cfg(feature = "full")]
-    pub fn handle_partial_resolution(
-        env: Env,
-        market_id: Symbol,
-        partial_data: edge_cases::PartialData,
-    ) -> Result<(), Error> {
-        edge_cases::EdgeCaseHandler::handle_partial_resolution(&env, market_id, partial_data)
     }
 
     /// Validate edge case handling scenario
@@ -6611,20 +6589,6 @@ impl PredictifyHybrid {
         scenario: edge_cases::EdgeCaseScenario,
     ) -> Result<(), Error> {
         edge_cases::EdgeCaseHandler::validate_edge_case_handling(&env, scenario)
-    }
-
-    /// Run comprehensive edge case testing scenarios
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    #[cfg(feature = "full")]
-    pub fn test_edge_case_scenarios(env: Env) -> Result<(), Error> {
-        edge_cases::EdgeCaseHandler::test_edge_case_scenarios(&env)
     }
 
     /// Get comprehensive edge case statistics
