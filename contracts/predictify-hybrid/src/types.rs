@@ -585,6 +585,21 @@ impl OracleProvider {
         }
     }
 
+    /// Like [`Self::name`], but builds the string in the caller's `Env`.
+    ///
+    /// `name()` allocates in a throwaway `Env`, so its result cannot be placed in
+    /// storage or events of a live environment; use this variant there.
+    pub fn name_in(&self, env: &soroban_sdk::Env) -> String {
+        let label = match self.as_str() {
+            "reflector" => "Reflector",
+            "pyth" => "Pyth Network",
+            "band_protocol" => "Band Protocol",
+            "dia" => "DIA",
+            _ => "Unknown Provider",
+        };
+        String::from_str(env, label)
+    }
+
     /// Checks if this oracle provider is known to the current contract version.
     ///
     /// This method identifies providers that are explicitly recognized by the
