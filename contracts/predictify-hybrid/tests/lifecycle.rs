@@ -159,7 +159,7 @@ fn test_archive_emits_event() {
     // Check events were emitted
     let events = setup.env.events().all();
     assert!(
-        !events.events().is_empty(),
+        !events.is_empty(),
         "Archive should emit events"
     );
 }

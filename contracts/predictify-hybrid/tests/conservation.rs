@@ -4,7 +4,7 @@ use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
 use soroban_sdk::token::StellarAssetClient;
 use soroban_sdk::{Address, Env, String, Symbol};
 
-const ORACLE_ADDRESS: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+const ORACLE_ADDRESS: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 const INITIAL_BALANCE: i128 = 1_000;
 
 fn setup() -> (Env, Address, Address, Address, Address) {
