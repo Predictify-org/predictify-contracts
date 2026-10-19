@@ -701,8 +701,8 @@ proptest! {
         let client = state.client();
         let outcomes = vec![
             &state.env,
-            SorobanString::from_str(&state.env, "A"),
-            SorobanString::from_str(&state.env, "B"),
+            SorobanString::from_str(&state.env, "Yes"),
+            SorobanString::from_str(&state.env, "No"),
         ];
 
         state.env.mock_all_auths();
@@ -732,7 +732,7 @@ proptest! {
         let first_result = client.try_vote(
             &user,
             &market_id,
-            &SorobanString::from_str(&state.env, "A"),
+            &SorobanString::from_str(&state.env, "Yes"),
             &stake,
         );
 
@@ -741,16 +741,12 @@ proptest! {
         let second_result = client.try_vote(
             &user,
             &market_id,
-            &SorobanString::from_str(&state.env, "B"),
+            &SorobanString::from_str(&state.env, "No"),
             &stake,
         );
 
-        if first_result.is_ok() {
-            prop_assert!(
-                second_result.is_err(),
-                "Second vote should fail with AlreadyVoted"
-            );
-        }
+        prop_assert!(first_result.is_ok(), "First valid vote must succeed: {:?}", first_result);
+        prop_assert_eq!(second_result, Err(Ok(Error::AlreadyVoted)), "Duplicate vote must return AlreadyVoted");
     }
 }
 
