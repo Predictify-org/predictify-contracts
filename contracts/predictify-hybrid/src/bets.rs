@@ -2469,9 +2469,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_atomic_bet_stats_overflow_is_rejected_before_commit() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let market_id = Symbol::new(&env, "mkt_oflow");
         let outcome = String::from_str(&env, "yes");
 
@@ -2491,7 +2492,7 @@ mod tests {
 
         let stored = BetStorage::get_market_bet_stats(&env, &market_id);
         assert_eq!(stored.total_amount_locked, i128::MAX);
-        assert_eq!(stored.total_bets, 1);
+        assert_eq!(stored.total_bets, 1);        });
     }
 
     #[test]
