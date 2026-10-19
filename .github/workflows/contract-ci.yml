@@ -15,11 +15,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
+      - name: Check ignored-test budget
+        run: bash scripts/check_ignored_tests.sh
       - name: Build
         run: cargo build -p predictify-hybrid
       - name: Test stable crates
         run: cargo test -p hello-world -p oracles
       - name: Test predictify-hybrid
         run: cargo test -p predictify-hybrid --lib
+      - name: Test predictify-hybrid integration targets
+        run: cargo test -p predictify-hybrid --tests
       - name: Slim (deployable) feature set compiles
         run: cargo check -p predictify-hybrid --no-default-features
