@@ -2282,9 +2282,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_bet_storage_store_and_get_roundtrip() {
-        let env = Env::default();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
         let user = Address::generate(&env);
         let market_id = Symbol::new(&env, "mkt_rt");
         let outcome = String::from_str(&env, "yes");
@@ -2294,7 +2295,7 @@ mod tests {
 
         let stored = BetStorage::get_bet(&env, &market_id, &user).unwrap();
         assert_eq!(stored.amount, 10_000_000);
-        assert_eq!(stored.status, BetStatus::Active);
+        assert_eq!(stored.status, BetStatus::Active);        });
     }
 
     #[test]
