@@ -4,6 +4,52 @@
 
 This document provides a comprehensive formal specification for the payout calculation and distribution mechanism in the Predictify Hybrid prediction market smart contract.
 
+## 0. Resolution and Payout Timeline
+
+Resolution and payouts are deliberately separated so that no winner can be paid
+before the result has been challengeable for a full dispute window.
+
+```text
+          market ends            result proposed                 payouts open
+              |                         |                              |
+              |<--- resolution may ---->|                              |
+              |     happen at any       |<--- dispute window --------->|
+              |     time after end      |    (dispute_window_seconds)  |
+              |                         |                              |
+         end_time                   resolved_at              resolved_at + window
+```
+
+Rules:
+
+1. **Resolution is one-way.** `resolve_market_manual`, `resolve_market_with_ties`
+   and `force_resolve_market` reject a market whose `winning_outcomes` is set or
+   whose state is `Resolved` with `Error::MarketResolved`. A `Cancelled` market
+   is rejected with `Error::InvalidState`. Force-resolve may bypass the market's
+   end time, but it cannot re-settle a resolved market or revive a cancelled one.
+2. **Resolution time is recorded.** Every successful resolution stores the
+   ledger timestamp as the market's claim-window start (the existing
+   `UnclaimedWinningsPolicy::set_claim_window_start_if_missing` key). This value
+   is the `resolved_at` used by the dispute and payout gates. Resolved markets
+   created before this field existed fall back to `end_time`.
+3. **The dispute window runs from `resolved_at`, not `end_time`.** A result
+   proposed long after `end_time` still gets a full `dispute_window_seconds`
+   during which it can be disputed. Once that window closes the result is final.
+4. **Payouts are a separate step.** Resolution never calls `distribute_payouts`.
+   `claim_winnings`, `distribute_payouts` and `sweep_unclaimed_winnings` all use
+   the shared `require_payout_allowed` gate, which requires:
+   - a final outcome (`winning_outcomes` is set; otherwise
+     `Error::MarketNotResolved`),
+   - `now >= resolved_at + dispute_window_seconds` (otherwise
+     `Error::InvalidState`),
+   - no open (`Active`) dispute (otherwise `Error::InvalidState`).
+5. **Claims stay idempotent.** Once a winner is credited through either
+   `claim_winnings` or `distribute_payouts`, the market's `claimed` map prevents
+   any other payout path from crediting the same winner again.
+
+Error precedence for payout paths is `MarketNotResolved`, then
+`InvalidState` (window still open), then `InvalidState` (open dispute), then
+`AlreadyClaimed`.
+
 ## 1. Payout Calculation Formula
 
 ### 1.1 Basic Payout Formula

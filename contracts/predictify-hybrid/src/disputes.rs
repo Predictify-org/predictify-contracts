@@ -945,7 +945,7 @@ impl DisputeManager {
 
         // Get and validate market
         let mut market = MarketStateManager::get_market(env, &market_id)?;
-        DisputeValidator::validate_market_for_dispute(env, &market)?;
+        DisputeValidator::validate_market_for_dispute(env, &market_id, &market)?;
 
         // Enforce anti-grief floor (market specific or global)
         let global_anti_grief_floor = Self::get_anti_grief_floor(env).unwrap_or(0);
@@ -1215,7 +1215,7 @@ impl DisputeManager {
             env.storage().persistent().extend_ttl(&DataKey::DisputeHistory(market_id.clone()), 535680, 535680);
         }
 
-        let _ = crate::resolution::ResolutionOutcomeCache::refresh(env, &market_id, &market);
+        crate::resolution::ResolutionOutcomeCache::refresh(env, &market_id, &market)?;
         crate::monitoring::ContractMonitor::emit_dispute_transition_hook(
             env,
             &market_id,
@@ -2478,35 +2478,55 @@ impl DisputeValidator {
     ///
     /// A dispute is only valid when:
     /// 1. The market has ended (`current_time >= end_time`).
-    /// 2. The dispute window is still open (`current_time < end_time + dispute_window_seconds`).
-    ///    Allowing disputes after the window closes would create an ambiguous overlap with
-    ///    the payout phase and could re-open markets that users already consider settled.
-    /// 3. The market has not already been resolved.
-    /// 4. An oracle result is available to dispute.
-    pub fn validate_market_for_dispute(env: &Env, market: &Market) -> Result<(), Error> {
+    /// 2. The dispute window is still open. For a resolved market the window is
+    ///    measured from the recorded resolution time (`resolved_at`), so a result
+    ///    proposed long after `end_time` still gets a full dispute window.
+    /// 3. An oracle result (unresolved markets) or a proposed resolution
+    ///    (resolved markets) is available to dispute.
+    ///
+    /// Resolved markets may be disputed only while their post-resolution window
+    /// is open. Once it closes the market is final and payouts are allowed.
+    pub fn validate_market_for_dispute(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+    ) -> Result<(), Error> {
         let current_time = env.ledger().timestamp();
+
+        if market.state == crate::types::MarketState::Cancelled {
+            return Err(Error::InvalidState);
+        }
 
         // Market must have ended before a dispute can be filed.
         if current_time < market.end_time {
             return Err(Error::MarketClosed);
         }
 
-        // Disputes must be filed within the dispute window.
-        // After `end_time + dispute_window_seconds` the window is closed and payouts
-        // are unambiguously allowed, so late disputes are rejected.
+        // The dispute window starts when a result is proposed. Resolved markets
+        // use the recorded resolution time (stored as the claim-window start by
+        // the resolution entrypoints); unresolved markets, and legacy resolved
+        // markets without a recorded time, fall back to `end_time`.
+        let window_start = if market.winning_outcomes.is_some() {
+            crate::recovery::UnclaimedWinningsPolicy::get_claim_window_start(
+                env,
+                market_id,
+                market.end_time,
+            )
+        } else {
+            market.end_time
+        };
+
         if market.dispute_window_seconds > 0
-            && current_time >= market.end_time + market.dispute_window_seconds
+            && current_time
+                >= window_start.saturating_add(market.dispute_window_seconds)
         {
             return Err(Error::MarketResolved);
         }
 
-        // Check if market is already resolved.
-        if market.winning_outcomes.is_some() {
-            return Err(Error::MarketResolved);
-        }
-
-        // Check if oracle result is available to dispute.
-        if market.oracle_result.is_none() {
+        // An unresolved market needs an oracle result to dispute. A resolved
+        // market already has a proposed outcome, so manual resolutions (which
+        // do not carry an oracle result) remain disputable too.
+        if market.winning_outcomes.is_none() && market.oracle_result.is_none() {
             return Err(Error::OracleUnavailable);
         }
 
@@ -3622,20 +3642,41 @@ mod tests {
         let mut market = create_test_market(&env, env.ledger().timestamp() + 86400);
 
         // Market not ended - should fail
-        assert!(DisputeValidator::validate_market_for_dispute(&env, &market).is_err());
+        assert!(
+            DisputeValidator::validate_market_for_dispute(
+                &env,
+                &Symbol::new(&env, "market_1"),
+                &market,
+            )
+            .is_err()
+        );
 
         // Set market as ended
 
         market.end_time = env.ledger().timestamp().saturating_sub(1);
 
         // No oracle result - should fail
-        assert!(DisputeValidator::validate_market_for_dispute(&env, &market).is_err());
+        assert!(
+            DisputeValidator::validate_market_for_dispute(
+                &env,
+                &Symbol::new(&env, "market_1"),
+                &market,
+            )
+            .is_err()
+        );
 
         // Add oracle result
         market.oracle_result = Some(String::from_str(&env, "yes"));
 
         // Should pass
-        assert!(DisputeValidator::validate_market_for_dispute(&env, &market).is_ok());
+        assert!(
+            DisputeValidator::validate_market_for_dispute(
+                &env,
+                &Symbol::new(&env, "market_1"),
+                &market,
+            )
+            .is_ok()
+        );
     }
 
     #[test]
