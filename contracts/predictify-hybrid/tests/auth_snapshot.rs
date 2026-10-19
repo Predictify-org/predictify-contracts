@@ -551,6 +551,6 @@ fn edge_non_admin_set_treasury_is_unauthorized() {
     let f = Fixture::new();
     let attacker = Address::generate(&f.env);
     let treasury = Address::generate(&f.env);
-    assert_eq!(f.client().try_set_treasury(&attacker, &treasury), Err(Ok(Error::Unauthorized)));
+    assert_eq!(f.client().try_set_treasury(&attacker, &treasury), Err(Ok(soroban_sdk::Error::from_contract_error(Error::Unauthorized as u32))));
     assert!(f.client().get_pending_treasury_update().is_none());
 }

@@ -746,7 +746,7 @@ proptest! {
         );
 
         prop_assert!(first_result.is_ok(), "First valid vote must succeed: {:?}", first_result);
-        prop_assert_eq!(second_result, Err(Ok(Error::AlreadyVoted)), "Duplicate vote must return AlreadyVoted");
+        prop_assert_eq!(second_result, Err(Ok(soroban_sdk::Error::from_contract_error(Error::AlreadyVoted as u32))), "Duplicate vote must return AlreadyVoted");
     }
 }
 
