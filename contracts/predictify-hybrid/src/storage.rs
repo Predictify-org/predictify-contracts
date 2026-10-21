@@ -222,6 +222,18 @@ pub enum DataKey {
     /// replacement. Written by the upgrade hook so on-chain consumers can
     /// discover topic renames without re-deploying.
     EventTopicAlias(Symbol),
+    /// Sharded market ID registry entry at a specific index.
+    /// Replaces the single unbounded Vec at "mid_registry".
+    /// TTL: MARKET_TTL_LEDGERS
+    MarketIdAt(u32),
+    /// Total count of market IDs in the registry.
+    /// Monotonically increasing counter for registry pagination.
+    /// TTL: MARKET_TTL_LEDGERS
+    MarketIdCount,
+    /// Per-admin market creation counter.
+    /// Replaces the single Map at "admin_counters".
+    /// TTL: MARKET_TTL_LEDGERS
+    AdminMarketCounter(Address),
 }
 
 /// Storage format version for migration tracking

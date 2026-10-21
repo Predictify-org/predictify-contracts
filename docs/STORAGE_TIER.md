@@ -64,6 +64,9 @@ See *Known deviations* for the consequences.
 | `MarketScratch(Symbol)` | temporary | — | set at call site | scratch demotion path |
 | `MarketCache(Symbol)` | instance | — | ~8 min (shared) | `markets.rs` read cache |
 | `MarketExtensionTotal(Symbol)` | persistent | Market | ~365 d | market extension path |
+| `MarketIdAt(u32)` | persistent | Market | ~365 d | `market_id_generator::register_market_id` |
+| `MarketIdCount` | persistent | Market | ~365 d | `market_id_generator::increment_market_id_count` |
+| `AdminMarketCounter(Address)` | persistent | Market | ~365 d | `market_id_generator::set_admin_counter` |
 | `Whitelisted(Address)` | persistent | Market | ~365 d | admin access control |
 | `Blacklisted(Address)` | persistent | Market | ~365 d | admin access control |
 | `AdminOverrideNonce(Address)` | persistent | Market | ~365 d | admin override replay guard |
@@ -140,6 +143,41 @@ since this change is documentation-only.
    `PlatformFee`, `OracleConfidence`, `AdminEmergency`) and omits most keys
    that are. Where it disagrees with this document, this document reflects the
    code. Reconciling or removing that module is left to a follow-up.
+
+## Market ID Registry Migration (Issue #1460)
+
+The market ID registry was migrated from unbounded monolithic storage to sharded
+per-entry keys to eliminate linear cost growth and per-entry size limits.
+
+### Legacy keys (deprecated, read-only after migration)
+
+- **`Symbol("mid_registry")`** — Single `Vec<MarketIdRegistryEntry>` holding all
+  market IDs ever created. Reading/writing this Vec grew linearly with market count
+  until hitting network entry size limits. **Replaced by**: `MarketIdAt(u32)` + `MarketIdCount`.
+
+- **`Symbol("admin_counters")`** — Single `Map<Address, u32>` holding all admin
+  creation counters. **Replaced by**: `AdminMarketCounter(Address)`.
+
+### Migration strategy
+
+- Use `migrate_market_id_registry(admin, batch_size)` to move entries from the
+  legacy Vec to sharded `MarketIdAt(index)` keys in batches of up to 100.
+- Use `migrate_admin_counters(admin)` to move counters from the legacy Map to
+  sharded `AdminMarketCounter(Address)` keys.
+- Both functions are idempotent and safe to call repeatedly until migration
+  is complete.
+- All read paths automatically fall back to legacy storage when sharded entries
+  are not found, ensuring compatibility during partial migration.
+- New market creation writes directly to sharded storage, bypassing legacy keys.
+- Legacy keys remain in storage after migration for audit purposes but are never
+  written to after the first sharded write completes.
+
+### Cost impact
+
+Before sharding, creating market #500 required reading/writing 500 registry entries.
+After sharding, every market creation touches exactly 3 persistent keys:
+`MarketIdAt(index)`, `MarketIdCount`, and `AdminMarketCounter(admin)`, regardless
+of how many markets exist. This achieves O(1) scaling for market creation.
 
 ## References
 
