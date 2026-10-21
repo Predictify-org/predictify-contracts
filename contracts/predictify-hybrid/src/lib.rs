@@ -81,6 +81,8 @@ mod recovery;
 mod statistics;
 mod tokens;
 mod rate_limiter;
+#[cfg(test)]
+mod rate_limit_enforcement_tests;
 mod dispute_multisig;
 mod event_topic_catalog;
 pub mod event_topic_compat;
@@ -1078,6 +1080,15 @@ impl PredictifyHybrid {
         // Rate limit voting to prevent abuse
         if let Err(rate_err) = crate::rate_limiter::RateLimiter::new(env.clone())
             .rate_limit_voting(user.clone(), market_id.clone())
+        {
+            if !matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                panic_with_error!(env, Error::from(rate_err));
+            }
+        }
+
+        // Rate limit bets (vote counts as a bet)
+        if let Err(rate_err) = crate::rate_limiter::RateLimiter::new(env.clone())
+            .rate_limit_bets(user.clone())
         {
             if !matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
                 panic_with_error!(env, Error::from(rate_err));
@@ -2542,6 +2553,35 @@ impl PredictifyHybrid {
         Ok(())
     }
 
+    /// Sets the global per-ledger bet cap to dampen flash-trading bursts.
+    /// 
+    /// # Parameters
+    /// * `admin` - The primary administrator address.
+    /// * `cap` - Maximum number of bets allowed per ledger (0 = disabled).
+    ///
+    /// # Errors
+    /// Returns [`Error::Unauthorized`] if caller is not the primary admin.
+    ///
+    /// # Events
+    /// Emits an admin action event for the cap update.
+    pub fn set_per_ledger_bet_cap(env: Env, admin: Address, cap: u32) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        
+        let rate_limiter = crate::rate_limiter::RateLimiter::new(env.clone());
+        rate_limiter.set_per_ledger_bet_cap(cap)
+            .map_err(|e| Error::from(e))?;
+        
+        // Emit admin action event
+        EventEmitter::emit_admin_action_logged(
+            &env,
+            &admin,
+            "set_per_ledger_bet_cap",
+            &true,
+        );
+        
+        Ok(())
+    }
+
     pub fn resolve_market_manual(
         env: Env,
         admin: Address,
@@ -3062,6 +3102,15 @@ impl PredictifyHybrid {
         oracle_contract: Address,
     ) -> Result<String, Error> {
         let _ = oracle_contract;
+
+        // Enforce oracle call rate limit before making external call
+        let rate_limiter = crate::rate_limiter::RateLimiter::new(env.clone());
+        if let Err(rate_err) = rate_limiter.rate_limit_oracle_calls(market_id.clone()) {
+            if !matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                return Err(Error::from(rate_err));
+            }
+            // ConfigNotFound means no rate limit configured, so skip
+        }
 
         // Get the market from storage
         let mut market = env

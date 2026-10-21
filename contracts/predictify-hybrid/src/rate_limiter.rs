@@ -1,5 +1,9 @@
 use soroban_sdk::{contracterror, contracttype, Address, Env, Symbol};
 
+/// Approximate ledger duration in seconds (5 seconds per ledger on Stellar).
+/// Used to convert time window seconds to ledger counts for TTL.
+const LEDGER_SECONDS: u64 = 5;
+
 /// How the token bucket refills between requests.
 ///
 /// ## Linear (default)
@@ -76,7 +80,7 @@ pub struct RateLimit {
 #[contracttype]
 pub enum RateLimiterData {
     Config,
-    UserVoting(Address, Symbol),   // user, market_id
+    UserVoting(Address),           // user (global voting count per window)
     UserDisputes(Address, Symbol), // user, market_id
     OracleCalls(Symbol),           // market_id
     UserBets(Address),             // user (global bet count per window)
@@ -231,10 +235,16 @@ impl RateLimiter {
         }
 
         self.env.storage().temporary().set(key, &limit);
+        
+        // Convert time window from seconds to ledgers, add a margin for safety.
+        // Each ledger is approximately LEDGER_SECONDS (5s on Stellar).
+        let ttl_ledgers = (time_window / LEDGER_SECONDS).saturating_add(100);
+        let ttl_ledgers_u32 = ttl_ledgers.min(u32::MAX as u64) as u32;
+        
         self.env.storage().temporary().extend_ttl(
             key,
-            time_window as u32 + 86400,
-            time_window as u32 + 86400,
+            ttl_ledgers_u32,
+            ttl_ledgers_u32,
         );
 
         Ok(())
@@ -272,8 +282,9 @@ impl RateLimiter {
         // second authorization of an already-authorized frame with
         // `Error(Auth, ExistingValue)`. This matches `rate_limit_bets` and
         // `rate_limit_admin_events`, which likewise rely on their caller.
+        let _ = market_id; // Keep parameter for API compatibility but don't use it
         let config = self.get_config()?;
-        let key = RateLimiterData::UserVoting(user.clone(), market_id.clone());
+        let key = RateLimiterData::UserVoting(user.clone());
         let limit = self.get_or_create_limit(&key);
 
         self.check_limit_with_config(&limit, config.voting_limit, &config)?;
@@ -357,8 +368,8 @@ impl RateLimiter {
     }
 
     /// Set the global per-ledger bet cap (admin only).
-    pub fn set_per_ledger_bet_cap(&self, admin: Address, cap: u32) -> Result<(), RateLimiterError> {
-        admin.require_auth();
+    /// Note: Caller must have already authenticated admin.
+    pub fn set_per_ledger_bet_cap(&self, cap: u32) -> Result<(), RateLimiterError> {
         self.env.storage().persistent().set(&crate::storage::DataKey::PerLedgerBetCap, &cap);
         Ok(())
     }
@@ -400,7 +411,7 @@ impl RateLimiter {
     ) -> Result<RateLimitStatus, RateLimiterError> {
         let config = self.get_config()?;
 
-        let voting_key = RateLimiterData::UserVoting(user.clone(), market_id.clone());
+        let voting_key = RateLimiterData::UserVoting(user.clone());
         let voting_limit = self.get_or_create_limit(&voting_key);
 
         let dispute_key = RateLimiterData::UserDisputes(user.clone(), market_id.clone());
@@ -408,7 +419,7 @@ impl RateLimiter {
 
         let current_time = self.env.ledger().timestamp();
 
-        let (voting_remaining, dispute_remaining) = match &config.refill_mode {
+        let (voting_remaining, dispute_remaining, window_reset_time) = match &config.refill_mode {
             RefillMode::Linear => {
                 let v_active = current_time < voting_limit.window_start.saturating_add(config.time_window_seconds);
                 let d_active = current_time < dispute_limit.window_start.saturating_add(config.time_window_seconds);
@@ -417,19 +428,32 @@ impl RateLimiter {
                 (
                     config.voting_limit.saturating_sub(v_count),
                     config.dispute_limit.saturating_sub(d_count),
+                    voting_limit.window_start + config.time_window_seconds,
                 )
             }
             RefillMode::HalfLife(half_life_secs) => {
                 let v_avail = Self::halflife_available(&voting_limit, config.voting_limit, *half_life_secs, current_time);
                 let d_avail = Self::halflife_available(&dispute_limit, config.dispute_limit, *half_life_secs, current_time);
-                (v_avail, d_avail)
+                
+                // In HalfLife mode, compute when at least one token becomes available.
+                // If we already have tokens available, reset_time is "now".
+                let reset_time = if v_avail > 0 {
+                    current_time
+                } else {
+                    // We're at capacity; estimate when one token decays back.
+                    // With consumed = capacity, after one half-life, consumed becomes capacity/2,
+                    // making 1 token available.
+                    voting_limit.window_start.saturating_add(*half_life_secs)
+                };
+                
+                (v_avail, d_avail, reset_time)
             }
         };
 
         Ok(RateLimitStatus {
             voting_remaining,
             dispute_remaining,
-            window_reset_time: voting_limit.window_start + config.time_window_seconds,
+            window_reset_time,
             current_time,
         })
     }

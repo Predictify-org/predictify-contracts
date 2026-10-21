@@ -400,6 +400,14 @@ impl BetManager {
         let rate_limiter = crate::rate_limiter::RateLimiter::new(env.clone());
         rate_limiter.rate_limit_global_bets_per_ledger()?;
 
+        // Enforce per-user bet limit
+        if let Err(rate_err) = rate_limiter.rate_limit_bets(user.clone()) {
+            if !matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                return Err(Error::from(rate_err));
+            }
+            // ConfigNotFound means no rate limit configured, so skip
+        }
+
         // Resolve and validate the fee once before any fund or bet-state write.
         // A zero max_fee_bps keeps the existing "no slippage guard" behaviour.
         if max_fee_bps > 0 {
@@ -561,6 +569,8 @@ impl BetManager {
         let mut markets = soroban_sdk::Vec::new(env);
         let mut total_amount: i128 = 0;
         let mut seen_markets = soroban_sdk::Map::new(env);
+        
+        let rate_limiter = crate::rate_limiter::RateLimiter::new(env.clone());
 
         for bet_data in bets.iter() {
             let (market_id, outcome, amount) = bet_data;
@@ -574,8 +584,15 @@ impl BetManager {
             seen_markets.set(market_id.clone(), true);
 
             // Enforce global per-ledger bet cap for each bet in the batch
-            let rate_limiter = crate::rate_limiter::RateLimiter::new(env.clone());
             rate_limiter.rate_limit_global_bets_per_ledger()?;
+
+            // Enforce per-user bet limit for each bet in the batch (all-or-nothing)
+            if let Err(rate_err) = rate_limiter.rate_limit_bets(user.clone()) {
+                if !matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                    return Err(Error::from(rate_err));
+                }
+                // ConfigNotFound means no rate limit configured, so skip
+            }
 
             // Get and validate market
             let market = MarketStateManager::get_market(env, &market_id)?;
