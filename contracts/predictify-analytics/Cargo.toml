@@ -17,9 +17,9 @@ testutils = []
 soroban-sdk = { workspace = true }
 predictify-hybrid = { path = "../predictify-hybrid", features = ["full"] }
 
-[depdevelopment-dependencies]
+[dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
 proptest = "1.4"
-
-[dev-dependencies]
-predictify-hybrid = { path = "../predictify-hybrid", features = ["full", "testutils"] }
+# `predictify-hybrid` has no `testutils` feature (available: default, full);
+# requesting it broke workspace resolution for every cargo command.
+predictify-hybrid = { path = "../predictify-hybrid", features = ["full"] }
