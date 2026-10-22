@@ -1381,7 +1381,9 @@ pub struct ContractInitializedEvent {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PlatformFeeSetEvent {
-    /// Fee percentage
+    /// Fee percentage before the update.
+    pub old_fee_percentage: i128,
+    /// Fee percentage after the update.
     pub fee_percentage: i128,
     /// Set by admin
     pub set_by: Address,
@@ -3470,9 +3472,15 @@ impl EventEmitter {
             .publish((Symbol::new(env, "contract_initialized"),), event);
     }
 
-    pub fn emit_platform_fee_set(env: &Env, fee: i128, admin: &Address) {
+    pub fn emit_platform_fee_set(
+        env: &Env,
+        old_fee: i128,
+        new_fee: i128,
+        admin: &Address,
+    ) {
         let event = PlatformFeeSetEvent {
-            fee_percentage: fee,
+            old_fee_percentage: old_fee,
+            fee_percentage: new_fee,
             set_by: admin.clone(),
             nonce: Self::get_and_increment_nonce(env, symbol_short!("pltf_set")),
             timestamp: env.ledger().timestamp(),
