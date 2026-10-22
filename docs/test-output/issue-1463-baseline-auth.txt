@@ -1,0 +1,50 @@
+Base revision: 78ce97e (isolated git archive)
+Command: cargo llvm-cov -p predictify-hybrid --no-report --test auth_snapshot --test auth_snapshot_disputes --no-fail-fast
+
+---- snapshot_set_treasury_requires_admin_auth stdout ----
+
+thread 'snapshot_set_treasury_requires_admin_auth' (13144) panicked at C:\Users\sebas\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\soroban-env-host-25.0.1\src\host.rs:907:9:
+HostError: Error(Auth, ExistingValue)
+
+Event log (newest first):
+   0: [Diagnostic Event] topics:[error, Error(Auth, ExistingValue)], data:"escalating error to panic"
+   1: [Diagnostic Event] topics:[error, Error(Auth, ExistingValue)], data:["contract call failed", set_treasury, [CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM]]
+   2: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4, topics:[error, Error(Auth, ExistingValue)], data:"caught error from function"
+   3: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4, topics:[error, Error(Auth, ExistingValue)], data:"escalating error to panic"
+   4: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4, topics:[error, Error(Auth, ExistingValue)], data:"frame is already authorized"
+   5: [Diagnostic Event] topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4, set_treasury], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM]
+
+test result: FAILED. 23 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.05s
+error: test failed, to rerun pass `-p predictify-hybrid --test auth_snapshot`
+---- snapshot_set_history_cap_requires_admin_auth stdout ----
+
+thread 'snapshot_set_history_cap_requires_admin_auth' (14456) panicked at C:\Users\sebas\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\soroban-env-host-25.0.1\src\host.rs:907:9:
+HostError: Error(Auth, ExistingValue)
+
+Event log (newest first):
+   0: [Diagnostic Event] topics:[error, Error(Auth, ExistingValue)], data:"escalating error to panic"
+   1: [Diagnostic Event] topics:[error, Error(Auth, ExistingValue)], data:["contract call failed", set_history_cap, [CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, 50]]
+   2: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4, topics:[error, Error(Auth, ExistingValue)], data:"caught error from function"
+   3: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4, topics:[error, Error(Auth, ExistingValue)], data:"escalating error to panic"
+   4: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4, topics:[error, Error(Auth, ExistingValue)], data:"frame is already authorized"
+   5: [Diagnostic Event] topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4, set_history_cap], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, 50]
+
+---- snapshot_set_anti_grief_floor_requires_admin_auth stdout ----
+
+thread 'snapshot_set_anti_grief_floor_requires_admin_auth' (7616) panicked at C:\Users\sebas\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\soroban-env-host-25.0.1\src\host.rs:907:9:
+HostError: Error(Auth, ExistingValue)
+
+Event log (newest first):
+   0: [Diagnostic Event] topics:[error, Error(Auth, ExistingValue)], data:"escalating error to panic"
+   1: [Diagnostic Event] topics:[error, Error(Auth, ExistingValue)], data:["contract call failed", set_anti_grief_floor, [CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, 1000]]
+   2: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4, topics:[error, Error(Auth, ExistingValue)], data:"caught error from function"
+   3: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4, topics:[error, Error(Auth, ExistingValue)], data:"escalating error to panic"
+   4: [Failed Diagnostic Event (not emitted)] contract:CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4, topics:[error, Error(Auth, ExistingValue)], data:"frame is already authorized"
+   5: [Diagnostic Event] topics:[fn_call, CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4, set_anti_grief_floor], data:[CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM, 1000]
+
+---- snapshot_resolve_dispute_requires_admin_auth stdout ----
+
+thread 'snapshot_resolve_dispute_requires_admin_auth' (9540) panicked at contracts\predictify-hybrid\tests\auth_snapshot_disputes.rs:113:9:
+resolve_dispute: expected to pass require_auth but trapped: Abort
+test result: FAILED. 8 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+error: test failed, to rerun pass `-p predictify-hybrid --test auth_snapshot_disputes`

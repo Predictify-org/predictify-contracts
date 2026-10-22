@@ -1,0 +1,82 @@
+{
+  "before": {
+    "revision": "78ce97e",
+    "command": "cargo llvm-cov -p predictify-hybrid --lib --json",
+    "file": "contracts/predictify-hybrid/src/bets.rs",
+    "summary": {
+      "branches": {
+        "count": 0,
+        "covered": 0,
+        "notcovered": 0,
+        "percent": 0.0
+      },
+      "mcdc": {
+        "count": 0,
+        "covered": 0,
+        "notcovered": 0,
+        "percent": 0.0
+      },
+      "functions": {
+        "count": 106,
+        "covered": 29,
+        "percent": 27.358490566037737
+      },
+      "instantiations": {
+        "count": 106,
+        "covered": 29,
+        "percent": 27.358490566037737
+      },
+      "lines": {
+        "count": 1238,
+        "covered": 291,
+        "percent": 23.505654281098547
+      },
+      "regions": {
+        "count": 2293,
+        "covered": 437,
+        "notcovered": 1856,
+        "percent": 19.058002616659397
+      }
+    }
+  },
+  "after": {
+    "revision": "working branch after restoration",
+    "command": "cargo llvm-cov -p predictify-hybrid --lib --json",
+    "file": "contracts/predictify-hybrid/src/bets.rs",
+    "summary": {
+      "branches": {
+        "count": 0,
+        "covered": 0,
+        "notcovered": 0,
+        "percent": 0.0
+      },
+      "mcdc": {
+        "count": 0,
+        "covered": 0,
+        "notcovered": 0,
+        "percent": 0.0
+      },
+      "functions": {
+        "count": 132,
+        "covered": 98,
+        "percent": 74.24242424242425
+      },
+      "instantiations": {
+        "count": 132,
+        "covered": 98,
+        "percent": 74.24242424242425
+      },
+      "lines": {
+        "count": 1346,
+        "covered": 895,
+        "percent": 66.49331352154532
+      },
+      "regions": {
+        "count": 2475,
+        "covered": 1608,
+        "notcovered": 867,
+        "percent": 64.96969696969697
+      }
+    }
+  }
+}

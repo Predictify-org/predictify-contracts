@@ -111,15 +111,15 @@ enum StorageTtlTier {
 impl StorageConfig {
     /// Validates configuration invariants before the config is persisted.
     ///
-    /// Zero TTL tiers are rejected because `extend_ttl` with a zero threshold
-    /// would allow stored records to expire immediately, silently losing
-    /// balances, markets, events, or archive data. All checks run before the
-    /// first storage write so an invalid config can never be partially stored.
+    /// Rejects a zero cleanup age and TTL tiers below their documented minimums
+    /// so configuration cannot trigger premature cleanup or record expiry.
+    /// All checks run before the first storage write.
     pub fn validate(&self) -> Result<(), Error> {
-        if self.balance_ttl_ledgers == 0
-            || self.market_ttl_ledgers == 0
-            || self.event_ttl_ledgers == 0
-            || self.archive_ttl_ledgers == 0
+        if self.cleanup_threshold_days == 0
+            || self.balance_ttl_ledgers < BALANCE_TTL_LEDGERS
+            || self.market_ttl_ledgers < MARKET_TTL_LEDGERS
+            || self.event_ttl_ledgers < EVENT_TTL_LEDGERS
+            || self.archive_ttl_ledgers < ARCHIVE_TTL_LEDGERS
         {
             return Err(Error::InvalidInput);
         }
@@ -222,6 +222,18 @@ pub enum DataKey {
     /// replacement. Written by the upgrade hook so on-chain consumers can
     /// discover topic renames without re-deploying.
     EventTopicAlias(Symbol),
+    /// Sharded market ID registry entry at a specific index.
+    /// Replaces the single unbounded Vec at "mid_registry".
+    /// TTL: MARKET_TTL_LEDGERS
+    MarketIdAt(u32),
+    /// Total count of market IDs in the registry.
+    /// Monotonically increasing counter for registry pagination.
+    /// TTL: MARKET_TTL_LEDGERS
+    MarketIdCount,
+    /// Per-admin market creation counter.
+    /// Replaces the single Map at "admin_counters".
+    /// TTL: MARKET_TTL_LEDGERS
+    AdminMarketCounter(Address),
 }
 
 /// Storage format version for migration tracking
@@ -580,12 +592,79 @@ impl StorageOptimizer {
         let current_time = env.ledger().timestamp();
 
         // Check if market is old enough for cleanup
-        let market_age_days = (current_time - market.end_time) / (24 * 60 * 60);
+        let elapsed = current_time
+            .checked_sub(market.end_time)
+            .ok_or(Error::InvalidState)?;
+        let market_age_days = elapsed / (24 * 60 * 60);
         let config = Self::get_storage_config(env);
 
         if market_age_days > config.cleanup_threshold_days.into() {
             // Only cleanup closed or cancelled markets
             if market.state == MarketState::Closed || market.state == MarketState::Cancelled {
+                if market.state == MarketState::Cancelled {
+                    let bettors =
+                        crate::bets::BetStorage::get_all_bets_for_market(env, market_id);
+                    for user in bettors.iter() {
+                        if crate::bets::BetStorage::get_bet(env, market_id, &user)
+                            .map(|bet| bet.status == crate::types::BetStatus::Active)
+                            .unwrap_or(false)
+                        {
+                            return Err(Error::InvalidState);
+                        }
+                    }
+                    for (_user, stake) in market.stakes.iter() {
+                        if stake > 0 {
+                            return Err(Error::InvalidState);
+                        }
+                    }
+                    if market.total_staked > 0 {
+                        return Err(Error::InvalidState);
+                    }
+                }
+
+                if !crate::recovery::UnclaimedWinningsPolicy::is_claim_window_expired(
+                    env,
+                    market_id,
+                    market.end_time,
+                ) {
+                    if let Some(winning_outcomes) = market.winning_outcomes.as_ref() {
+                        for (user, outcome) in market.votes.iter() {
+                            if winning_outcomes.contains(&outcome)
+                                && !market
+                                    .claimed
+                                    .get(user.clone())
+                                    .map(|claim| claim.is_claimed())
+                                    .unwrap_or(false)
+                            {
+                                return Err(Error::InvalidState);
+                            }
+                        }
+                        let bettors =
+                            crate::bets::BetStorage::get_all_bets_for_market(env, market_id);
+                        for user in bettors.iter() {
+                            if market.votes.contains_key(user.clone()) {
+                                continue;
+                            }
+                            if let Some(bet) =
+                                crate::bets::BetStorage::get_bet(env, market_id, &user)
+                            {
+                                if matches!(
+                                    bet.status,
+                                    crate::types::BetStatus::Active | crate::types::BetStatus::Won
+                                ) && winning_outcomes.contains(&bet.outcome)
+                                    && !market
+                                        .claimed
+                                        .get(user)
+                                        .map(|claim| claim.is_claimed())
+                                        .unwrap_or(false)
+                                {
+                                    return Err(Error::InvalidState);
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Archive market data before deletion
                 Self::archive_market_data(env, market_id, &market)?;
 

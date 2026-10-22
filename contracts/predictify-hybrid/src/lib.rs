@@ -5,6 +5,9 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 extern crate alloc;
 
+#[cfg(test)]
+pub(crate) mod testutil;
+
 // ===== MODULE DECLARATIONS =====
 // These must be declared here so Rust knows to compile them as part of this crate.
 
@@ -207,6 +210,9 @@ mod max_participants_tests;
 #[path = "tests/fee_config_commit_reveal_tests.rs"]
 mod fee_config_commit_reveal_tests;
 
+#[cfg(test)]
+mod fee_source_unification_tests;
+
 // #[cfg(test)]
 // mod event_creation_tests;
 
@@ -263,6 +269,17 @@ fn store_market_with_retention(env: &Env, market_id: &Symbol, market: &Market) {
         ),
         market_id.clone(),
     );
+}
+
+#[cfg(feature = "full")]
+fn record_full_admin_action(
+    env: &Env,
+    admin: &Address,
+    action: &str,
+    audit_action: crate::audit_trail::AuditAction,
+) {
+    EventEmitter::emit_admin_action_logged(env, admin, action, &true);
+    AuditTrailManager::append_record(env, audit_action, admin.clone(), Map::new(env), None);
 }
 
 impl From<crate::reentrancy_guard::GuardError> for Error {
@@ -444,7 +461,7 @@ impl PredictifyHybrid {
 
         // Emit contract initialized and platform fee events
         EventEmitter::emit_contract_initialized(&env, &admin, fee_percentage);
-        EventEmitter::emit_platform_fee_set(&env, fee_percentage, &admin);
+        EventEmitter::emit_platform_fee_set(&env, fee_percentage, fee_percentage, &admin);
 
         Ok(())
     }
@@ -1862,20 +1879,16 @@ impl PredictifyHybrid {
             let winning_total = summary.winning_total;
 
             if winning_total > 0 {
-                // Retrieve dynamic platform fee percentage from configuration
-                let cfg = match crate::config::ConfigManager::get_config(&env) {
-                    Ok(c) => c,
-                    Err(_) => panic_with_error!(env, Error::ConfigNotFound),
-                };
-                let fee_percent = cfg.fees.platform_fee_percentage;
+                let fee_percent = fees::effective_fee_bps(&env, &market)
+                    .unwrap_or_else(|e| panic_with_error!(env, e));
                 let user_share = (user_stake
-                    .checked_mul(PERCENTAGE_DENOMINATOR as i128 - fee_percent as i128)
-                    .unwrap_or_else(|| panic_with_error!(env, Error::InvalidInput)))
-                    / (PERCENTAGE_DENOMINATOR as i128);
+                    .checked_mul(PERCENTAGE_DENOMINATOR - fee_percent)
+                    .unwrap_or_else(|| panic_with_error!(env, Error::Overflow)))
+                    / PERCENTAGE_DENOMINATOR;
                 let total_pool = summary.total_pool;
                 let product = user_share
                     .checked_mul(total_pool)
-                    .unwrap_or_else(|| panic_with_error!(env, Error::InvalidInput));
+                    .unwrap_or_else(|| panic_with_error!(env, Error::Overflow));
                 let payout = product / winning_total;
 
                 // Calculate fee amount for statistics
@@ -1894,18 +1907,13 @@ impl PredictifyHybrid {
                 // Gross = (user_stake * total_pool) / winning_total.
                 // Fee = Gross - Payout.
 
-                let gross_share = (user_stake
-                    .checked_mul(PERCENTAGE_DENOMINATOR)
-                    .unwrap_or_else(|| panic_with_error!(env, Error::InvalidInput)))
-                    / (PERCENTAGE_DENOMINATOR as i128);
-                // Wait, user_stake * 100 / 100 = user_stake.
-                // The math above used PERCENTAGE_DENOMINATOR (100).
-
                 let product_gross = user_stake
                     .checked_mul(total_pool)
-                    .unwrap_or_else(|| panic_with_error!(env, Error::InvalidInput));
+                    .unwrap_or_else(|| panic_with_error!(env, Error::Overflow));
                 let gross_payout = product_gross / winning_total;
-                let fee_amount = gross_payout - payout;
+                let fee_amount = gross_payout
+                    .checked_sub(payout)
+                    .unwrap_or_else(|| panic_with_error!(env, Error::Overflow));
 
                 statistics::StatisticsManager::record_winnings_claimed(&env, &user, payout);
                 statistics::StatisticsManager::record_fees_collected(&env, fee_amount);
@@ -2061,7 +2069,7 @@ impl PredictifyHybrid {
     /// period has elapsed (default: 24 hours).
     #[cfg(feature = "full")]
     pub fn set_treasury(env: Env, admin: Address, treasury: Address) {
-        admin.require_auth();
+        // queue_update authenticates the admin in this invocation frame.
 
         let stored_admin: Address = env
             .storage()
@@ -2187,21 +2195,7 @@ impl PredictifyHybrid {
             return Err(Error::SweepAlreadyDone);
         }
 
-        let fee_percent = crate::config::ConfigManager::get_config(&env)
-            .map(|cfg| cfg.fees.platform_fee_percentage)
-            .unwrap_or_else(|_| {
-                // Use the short platform fee key (backwards-compat fallback to legacy long keys
-                // is not possible here because Soroban restricts symbols to <=9 chars).
-                // If you need to read old on-chain keys created with long symbols,
-                // perform a storage migration on-chain (one-time) to move legacy values
-                // under the new short key.
-                let new_key = Symbol::new(&env, "platform_fee");
-                env.storage().persistent().get(&new_key).unwrap_or(2)
-            });
-
-        if fee_percent < 0 || fee_percent > PERCENTAGE_DENOMINATOR {
-            return Err(Error::InvalidFeeConfig);
-        }
+        let fee_percent = fees::effective_fee_bps(&env, &market)?;
 
         let summary = resolution::ResolutionOutcomeCache::require(&env, &market_id, &market)?;
         let winning_total = summary.winning_total;
@@ -2233,12 +2227,12 @@ impl PredictifyHybrid {
             }
 
             let user_share = user_stake
-                .checked_mul(PERCENTAGE_DENOMINATOR as i128 - fee_percent as i128)
+                .checked_mul(PERCENTAGE_DENOMINATOR - fee_percent)
                 .ok_or(Error::InvalidInput)?
-                / (PERCENTAGE_DENOMINATOR as i128);
+                / PERCENTAGE_DENOMINATOR;
             let payout = user_share
                 .checked_mul(total_pool)
-                .ok_or(Error::InvalidInput)?
+                .ok_or(Error::Overflow)?
                 / winning_total;
 
             if payout < 0 {
@@ -2248,7 +2242,7 @@ impl PredictifyHybrid {
             market
                 .claimed
                 .set(user.clone(), ClaimInfo::new(&env, payout, 0u64));
-            swept_total = swept_total.checked_add(payout).ok_or(Error::InvalidInput)?;
+            swept_total = swept_total.checked_add(payout).ok_or(Error::Overflow)?;
         }
 
         for user in bettors.iter() {
@@ -2279,12 +2273,12 @@ impl PredictifyHybrid {
 
             let user_share = bet
                 .amount
-                .checked_mul(PERCENTAGE_DENOMINATOR as i128 - fee_percent as i128)
-                .ok_or(Error::InvalidInput)?
-                / (PERCENTAGE_DENOMINATOR as i128);
+                .checked_mul(PERCENTAGE_DENOMINATOR - fee_percent)
+                .ok_or(Error::Overflow)?
+                / PERCENTAGE_DENOMINATOR;
             let payout = user_share
                 .checked_mul(total_pool)
-                .ok_or(Error::InvalidInput)?
+                .ok_or(Error::Overflow)?
                 / winning_total;
 
             if payout < 0 {
@@ -2294,7 +2288,7 @@ impl PredictifyHybrid {
             market
                 .claimed
                 .set(user.clone(), ClaimInfo::new(&env, payout, 0u64));
-            swept_total = swept_total.checked_add(payout).ok_or(Error::InvalidInput)?;
+            swept_total = swept_total.checked_add(payout).ok_or(Error::Overflow)?;
         }
 
         let recipient = if burn {
@@ -4131,7 +4125,8 @@ impl PredictifyHybrid {
         admin: Address,
         market_id: Symbol,
     ) -> Result<disputes::DisputeResolution, Error> {
-        Self::require_primary_admin(&env, &admin)?;
+        // The manager authenticates and validates the stored primary admin.
+        // A second require_auth in this frame traps during simulation.
 
         let result = disputes::DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone());
         if result.is_ok() {
@@ -4155,7 +4150,8 @@ impl PredictifyHybrid {
         admin: Address,
         cap: u32,
     ) -> Result<(), Error> {
-        Self::require_primary_admin(&env, &admin)?;
+        // The manager authenticates and validates the stored primary admin.
+        // A second require_auth in this frame traps during simulation.
 
         disputes::DisputeManager::set_history_cap(&env, admin, cap)
     }
@@ -4167,7 +4163,8 @@ impl PredictifyHybrid {
         admin: Address,
         floor: i128,
     ) -> Result<(), Error> {
-        Self::require_primary_admin(&env, &admin)?;
+        // The manager authenticates and validates the stored primary admin.
+        // A second require_auth in this frame traps during simulation.
 
         disputes::DisputeManager::set_anti_grief_floor(&env, admin, floor)
     }
@@ -4383,12 +4380,7 @@ impl PredictifyHybrid {
         // ── Load bettor registry ───────────────────────────────────────────────
         let bettors = BetStorage::get_all_bets_for_market(&env, &market_id);
 
-        // ── Platform fee (basis points, default 200 = 2%) ─────────────────────
-        let fee_percent: i128 = env
-            .storage()
-            .persistent()
-            .get(&Symbol::new(&env, "platform_fee"))
-            .unwrap_or(200);
+        let fee_percent = fees::effective_fee_bps(&env, &market)?;
 
         // ── Short-circuit: check whether any unclaimed winners exist ───────────
         let mut has_unclaimed_winners = false;
@@ -4438,7 +4430,7 @@ impl PredictifyHybrid {
         }
 
         let total_pool = summary.total_pool;
-        let fee_denominator = 10_000i128;
+        let fee_denominator = PERCENTAGE_DENOMINATOR;
         let mut total_distributed: i128 = 0;
 
         // ── Budget guard: abort before host runs out of CPU instructions ───────
@@ -4468,12 +4460,12 @@ impl PredictifyHybrid {
                 if user_stake > 0 {
                     let user_share = (user_stake
                         .checked_mul(fee_denominator - fee_percent)
-                        .ok_or(Error::InvalidInput)?)
+                            .ok_or(Error::Overflow)?)
                         / fee_denominator;
 
                     let payout = (user_share
                         .checked_mul(total_pool)
-                        .ok_or(Error::InvalidInput)?)
+                            .ok_or(Error::Overflow)?)
                         / winning_total;
 
                     if payout >= 0 {
@@ -4484,7 +4476,7 @@ impl PredictifyHybrid {
                         if payout > 0 {
                             total_distributed = total_distributed
                                 .checked_add(payout)
-                                .ok_or(Error::InvalidInput)?;
+                                .ok_or(Error::Overflow)?;
 
                             BalanceStorage::add_balance(
                                 &env,
@@ -4527,12 +4519,12 @@ impl PredictifyHybrid {
                     } else if bet.amount > 0 {
                         let user_share = (bet.amount
                             .checked_mul(fee_denominator - fee_percent)
-                            .ok_or(Error::InvalidInput)?)
+                            .ok_or(Error::Overflow)?)
                             / fee_denominator;
 
                         let payout = (user_share
                             .checked_mul(total_pool)
-                            .ok_or(Error::InvalidInput)?)
+                            .ok_or(Error::Overflow)?)
                             / winning_total;
 
                         if payout > 0 {
@@ -4542,7 +4534,7 @@ impl PredictifyHybrid {
 
                             total_distributed = total_distributed
                                 .checked_add(payout)
-                                .ok_or(Error::InvalidInput)?;
+                                .ok_or(Error::Overflow)?;
 
                             bet.status = BetStatus::Won;
                             let _ = BetStorage::store_bet(&env, &bet);
@@ -4773,9 +4765,25 @@ impl PredictifyHybrid {
             return Err(Error::InvalidFeeConfig);
         }
 
-        // Update fee in legacy storage
+        let mut config = ConfigManager::get_config(&env)?;
+        let old_fee_percentage = if config.fees.fees_enabled {
+            config.fees.platform_fee_percentage
+        } else {
+            0
+        };
+        config.fees.platform_fee_percentage = fee_percentage;
+        ConfigManager::update_config(&env, &config)?;
+
+        // Keep the legacy value synchronized for pre-upgrade readers.
         let fee_key = Symbol::new(&env, "platform_fee");
         env.storage().persistent().set(&fee_key, &fee_percentage);
+
+        EventEmitter::emit_platform_fee_set(
+            &env,
+            old_fee_percentage,
+            fee_percentage,
+            &admin,
+        );
 
         crate::audit_trail::AuditTrailManager::append_record(
             &env,
@@ -6218,8 +6226,20 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     #[cfg(feature = "full")]
-    pub fn cleanup_old_market_data(env: Env, market_id: Symbol) -> Result<bool, Error> {
-        storage::StorageOptimizer::cleanup_old_market_data(&env, &market_id)
+    pub fn cleanup_old_market_data(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+    ) -> Result<bool, Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        let cleaned = storage::StorageOptimizer::cleanup_old_market_data(&env, &market_id)?;
+        record_full_admin_action(
+            &env,
+            &admin,
+            "cleanup_old_market_data",
+            crate::audit_trail::AuditAction::StorageOptimized,
+        );
+        Ok(cleaned)
     }
 
     /// Migrate storage format from old to new format
@@ -6234,21 +6254,20 @@ impl PredictifyHybrid {
     #[cfg(feature = "full")]
     pub fn migrate_storage_format(
         env: Env,
+        admin: Address,
         from_format: storage::StorageFormat,
         to_format: storage::StorageFormat,
     ) -> Result<storage::StorageMigration, Error> {
-        let result =
-            storage::StorageOptimizer::migrate_storage_format(&env, from_format, to_format);
-
-        crate::audit_trail::AuditTrailManager::append_record(
+        Self::require_primary_admin(&env, &admin)?;
+        let migration =
+            storage::StorageOptimizer::migrate_storage_format(&env, from_format, to_format)?;
+        record_full_admin_action(
             &env,
+            &admin,
+            "migrate_storage_format",
             crate::audit_trail::AuditAction::StorageMigrated,
-            env.current_contract_address(),
-            Map::new(&env),
-            None,
         );
-
-        result
+        Ok(migration)
     }
 
     /// Read-only recovery dry run for ops verification.
@@ -6393,8 +6412,20 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     #[cfg(feature = "full")]
-    pub fn update_storage_config(env: Env, config: storage::StorageConfig) -> Result<(), Error> {
-        storage::StorageOptimizer::update_storage_config(&env, &config)
+    pub fn update_storage_config(
+        env: Env,
+        admin: Address,
+        config: storage::StorageConfig,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        storage::StorageOptimizer::update_storage_config(&env, &config)?;
+        record_full_admin_action(
+            &env,
+            &admin,
+            "update_storage_config",
+            crate::audit_trail::AuditAction::StorageOptimized,
+        );
+        Ok(())
     }
 
     /// Calculate storage cost for a market
@@ -6503,20 +6534,6 @@ impl PredictifyHybrid {
     #[cfg(feature = "full")]
     pub fn get_error_recovery_status(env: Env) -> Result<errors::ErrorRecoveryStatus, Error> {
         errors::ErrorHandler::get_error_recovery_status(&env)
-    }
-
-    /// Emit error recovery event for monitoring and logging
-    ///
-    /// # Errors
-    ///
-    /// This entrypoint surfaces contract errors via panic in internal calls.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    #[cfg(feature = "full")]
-    pub fn emit_error_recovery_event(env: Env, recovery: errors::ErrorRecovery) {
-        errors::ErrorHandler::emit_error_recovery_event(&env, &recovery);
     }
 
     /// Validate resilience patterns configuration
@@ -6885,8 +6902,20 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     #[cfg(feature = "full")]
-    pub fn track_contract_version(env: Env, version: versioning::Version) -> Result<(), Error> {
-        versioning::VersionManager::new(&env).track_contract_version(&env, version)
+    pub fn track_contract_version(
+        env: Env,
+        admin: Address,
+        version: versioning::Version,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        versioning::VersionManager::new(&env).track_contract_version(&env, version)?;
+        record_full_admin_action(
+            &env,
+            &admin,
+            "track_contract_version",
+            crate::audit_trail::AuditAction::ContractUpgraded,
+        );
+        Ok(())
     }
 
     /// Migrate data between contract versions
@@ -6901,14 +6930,23 @@ impl PredictifyHybrid {
     #[cfg(feature = "full")]
     pub fn migrate_data_between_versions(
         env: Env,
+        admin: Address,
         old_version: versioning::Version,
         new_version: versioning::Version,
     ) -> Result<versioning::VersionMigration, Error> {
-        versioning::VersionManager::new(&env).migrate_data_between_versions(
+        Self::require_primary_admin(&env, &admin)?;
+        let migration = versioning::VersionManager::new(&env).migrate_data_between_versions(
             &env,
             old_version,
             new_version,
-        )
+        )?;
+        record_full_admin_action(
+            &env,
+            &admin,
+            "migrate_data_between_versions",
+            crate::audit_trail::AuditAction::StorageMigrated,
+        );
+        Ok(migration)
     }
 
     /// Validate version compatibility
@@ -6943,8 +6981,20 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     #[cfg(feature = "full")]
-    pub fn upgrade_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
-        versioning::VersionManager::new(&env).upgrade_to_version(&env, target_version)
+    pub fn upgrade_to_version(
+        env: Env,
+        admin: Address,
+        target_version: versioning::Version,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        versioning::VersionManager::new(&env).upgrade_to_version(&env, target_version)?;
+        record_full_admin_action(
+            &env,
+            &admin,
+            "upgrade_to_version",
+            crate::audit_trail::AuditAction::ContractUpgraded,
+        );
+        Ok(())
     }
 
     /// Rollback to a specific version
@@ -6957,8 +7007,20 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     #[cfg(feature = "full")]
-    pub fn rollback_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
-        versioning::VersionManager::new(&env).rollback_to_version(&env, target_version)
+    pub fn rollback_to_version(
+        env: Env,
+        admin: Address,
+        target_version: versioning::Version,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        versioning::VersionManager::new(&env).rollback_to_version(&env, target_version)?;
+        record_full_admin_action(
+            &env,
+            &admin,
+            "rollback_to_version",
+            crate::audit_trail::AuditAction::UpgradeRolledBack,
+        );
+        Ok(())
     }
 
     /// Get version history
@@ -7077,23 +7139,6 @@ impl PredictifyHybrid {
         timeframe: monitoring::TimeFrame,
     ) -> Result<monitoring::PerformanceMetrics, Error> {
         monitoring::ContractMonitor::get_contract_performance_metrics(&env, timeframe)
-    }
-
-    /// Emit monitoring alert
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    #[cfg(feature = "full")]
-    pub fn emit_monitoring_alert(
-        env: Env,
-        alert: monitoring::MonitoringAlert,
-    ) -> Result<(), Error> {
-        monitoring::ContractMonitor::emit_monitoring_alert(&env, alert)
     }
 
     /// Validate monitoring data integrity
@@ -7399,6 +7444,59 @@ impl PredictifyHybrid {
     #[cfg(feature = "full")]
     pub fn is_multi_admin_migrated(env: Env) -> bool {
         admin::AdminSystemIntegration::is_migrated(&env)
+    }
+
+    /// Migrate the legacy market ID registry to sharded storage
+    ///
+    /// Processes migration in batches to respect transaction limits. Call repeatedly
+    /// until `is_complete` returns `true`. This is idempotent and safe to call multiple times.
+    ///
+    /// # Parameters
+    ///
+    /// - `admin`: The admin address authorizing the migration
+    /// - `batch_size`: Number of entries to migrate in this call (capped at 100)
+    ///
+    /// # Returns
+    ///
+    /// A tuple `(migrated_count, total_count, is_complete)`:
+    /// - `migrated_count`: Entries migrated in this call
+    /// - `total_count`: Total entries in legacy registry
+    /// - `is_complete`: `true` when migration is finished
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
+    pub fn migrate_market_id_registry(env: Env, admin: Address, batch_size: u32) -> (u32, u32, bool) {
+        market_id_generator::MarketIdGenerator::migrate_market_id_registry(&env, &admin, batch_size)
+    }
+
+    /// Migrate admin counters from legacy Map to sharded storage
+    ///
+    /// Processes all admin counters in a single call. Idempotent and safe to call multiple times.
+    ///
+    /// # Parameters
+    ///
+    /// - `admin`: The admin address authorizing the migration
+    ///
+    /// # Returns
+    ///
+    /// The number of admin counters migrated.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
+    pub fn migrate_admin_counters(env: Env, admin: Address) -> u32 {
+        market_id_generator::MarketIdGenerator::migrate_admin_counters(&env, &admin)
     }
 
     /// Check role permissions against a specific permission
