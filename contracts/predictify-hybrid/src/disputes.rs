@@ -2447,7 +2447,8 @@ impl DisputeManager {
         admin: &Address,
         function_name: &Symbol,
     ) -> Result<(), Error> {
-        admin.require_auth();
+        // Every caller authenticates before checking cooldown. Repeating
+        // require_auth in the same frame aborts Soroban simulation.
         DisputeValidator::validate_admin_permissions(env, admin)?;
         let cooldown = Self::get_admin_cooldown(env);
         if cooldown == 0 {

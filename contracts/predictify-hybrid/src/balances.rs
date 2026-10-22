@@ -195,11 +195,7 @@ mod tests {
 
     use super::*;
     use crate::PredictifyHybridClient;
-    use soroban_sdk::{
-        testutils::{Address as _, EnvTestConfig},
-        token::{Client as TokenClient, StellarAssetClient},
-        Address, Env, Symbol,
-    };
+    use soroban_sdk::{testutils::Address as _, token::Client as TokenClient, Address, Env};
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
     struct BalanceTestSetup {
@@ -212,36 +208,13 @@ mod tests {
 
     impl BalanceTestSetup {
         fn new() -> Self {
-            let mut env = Env::default();
-            env.set_config(EnvTestConfig {
-                capture_snapshot_at_drop: false,
-            });
-            env.mock_all_auths();
-
-            let token_admin = Address::generate(&env);
-            let token_contract = env.register_stellar_asset_contract_v2(token_admin);
-            let token_id = token_contract.address();
-
-            let admin = Address::generate(&env);
-            let user = Address::generate(&env);
-            let sink = Address::generate(&env);
-
-            let contract_id = env.register(crate::PredictifyHybrid, ());
-            let client = PredictifyHybridClient::new(&env, &contract_id);
-            client.initialize(&admin, &None, &None);
-
-            env.as_contract(&contract_id, || {
-                env.storage()
-                    .persistent()
-                    .set(&Symbol::new(&env, "TokenID"), &token_id);
-            });
-
-            StellarAssetClient::new(&env, &token_id).mint(&user, &1_000_0000000);
-
+            let ctx = crate::testutil::TestCtx::new();
+            let user = ctx.funded_user(1_000_0000000);
+            let sink = Address::generate(&ctx.env);
             BalanceTestSetup {
-                env,
-                contract_id,
-                token_id,
+                env: ctx.env,
+                contract_id: ctx.contract_id,
+                token_id: ctx.token,
                 user,
                 sink,
             }
@@ -257,7 +230,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_deposit_credits_balance_after_transfer() {
         let setup = BalanceTestSetup::new();
         let client = setup.client();
@@ -267,7 +239,9 @@ mod tests {
 
         assert_eq!(balance.amount, 500_0000000);
         assert_eq!(
-            client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount,
+            client
+                .get_balance(&setup.user, &ReflectorAsset::Stellar)
+                .amount,
             500_0000000
         );
         assert_eq!(token_client.balance(&setup.user), 500_0000000);
@@ -275,7 +249,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_withdraw_exact_balance_reaches_zero() {
         let setup = BalanceTestSetup::new();
         let client = setup.client();
@@ -285,13 +258,17 @@ mod tests {
         let balance = client.withdraw(&setup.user, &ReflectorAsset::Stellar, &500);
 
         assert_eq!(balance.amount, 0);
-        assert_eq!(client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount, 0);
+        assert_eq!(
+            client
+                .get_balance(&setup.user, &ReflectorAsset::Stellar)
+                .amount,
+            0
+        );
         assert_eq!(token_client.balance(&setup.user), 1_000_0000000);
         assert_eq!(token_client.balance(&setup.contract_id), 0);
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_withdraw_allocates_remainder_and_conserves_balances() {
         let setup = BalanceTestSetup::new();
         let client = setup.client();
@@ -302,7 +279,9 @@ mod tests {
 
         assert_eq!(balance.amount, 300_0000000);
         assert_eq!(
-            client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount,
+            client
+                .get_balance(&setup.user, &ReflectorAsset::Stellar)
+                .amount,
             300_0000000
         );
         assert_eq!(token_client.balance(&setup.user), 700_0000000);
@@ -310,7 +289,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_withdraw_over_balance_returns_typed_error_without_mutation() {
         let setup = BalanceTestSetup::new();
         let client = setup.client();
@@ -321,13 +299,14 @@ mod tests {
 
         assert_eq!(result, Err(Ok(Error::InsufficientBalance)));
         assert_eq!(
-            client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount,
+            client
+                .get_balance(&setup.user, &ReflectorAsset::Stellar)
+                .amount,
             100_0000000
         );
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_withdraw_transfer_failure_does_not_leave_phantom_debit() {
         let setup = BalanceTestSetup::new();
         let client = setup.client();
@@ -344,7 +323,9 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(
-            client.get_balance(&setup.user, &ReflectorAsset::Stellar).amount,
+            client
+                .get_balance(&setup.user, &ReflectorAsset::Stellar)
+                .amount,
             400_0000000
         );
         assert_eq!(token_client.balance(&setup.user), 600_0000000);

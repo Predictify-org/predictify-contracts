@@ -5,6 +5,9 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 extern crate alloc;
 
+#[cfg(test)]
+pub(crate) mod testutil;
+
 // ===== MODULE DECLARATIONS =====
 // These must be declared here so Rust knows to compile them as part of this crate.
 
@@ -2086,7 +2089,7 @@ impl PredictifyHybrid {
     /// period has elapsed (default: 24 hours).
     #[cfg(feature = "full")]
     pub fn set_treasury(env: Env, admin: Address, treasury: Address) {
-        admin.require_auth();
+        // queue_update authenticates the admin in this invocation frame.
 
         let stored_admin: Address = env
             .storage()
@@ -4156,7 +4159,8 @@ impl PredictifyHybrid {
         admin: Address,
         market_id: Symbol,
     ) -> Result<disputes::DisputeResolution, Error> {
-        Self::require_primary_admin(&env, &admin)?;
+        // The manager authenticates and validates the stored primary admin.
+        // A second require_auth in this frame traps during simulation.
 
         let result = disputes::DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone());
         if result.is_ok() {
@@ -4180,7 +4184,8 @@ impl PredictifyHybrid {
         admin: Address,
         cap: u32,
     ) -> Result<(), Error> {
-        Self::require_primary_admin(&env, &admin)?;
+        // The manager authenticates and validates the stored primary admin.
+        // A second require_auth in this frame traps during simulation.
 
         disputes::DisputeManager::set_history_cap(&env, admin, cap)
     }
@@ -4192,7 +4197,8 @@ impl PredictifyHybrid {
         admin: Address,
         floor: i128,
     ) -> Result<(), Error> {
-        Self::require_primary_admin(&env, &admin)?;
+        // The manager authenticates and validates the stored primary admin.
+        // A second require_auth in this frame traps during simulation.
 
         disputes::DisputeManager::set_anti_grief_floor(&env, admin, floor)
     }

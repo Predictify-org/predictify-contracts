@@ -1952,123 +1952,139 @@ mod tests {
         );
     }
 
-    #[ignore]
     #[test]
     fn test_fee_slippage_guard_accepts_equal_fee() {
-        let env = Env::default();
-        let config = crate::config::ConfigManager::get_development_config(&env);
-        ConfigManager::store_config(&env, &config).unwrap();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let config = crate::config::ConfigManager::get_development_config(&env);
+            ConfigManager::store_config(&env, &config).unwrap();
 
-        // max_fee_bps equal to the platform fee should pass
-        assert!(BetValidator::validate_fee_slippage(&env, 200).is_ok());
+            // max_fee_bps equal to the platform fee should pass
+            assert!(BetValidator::validate_fee_slippage(&env, 200).is_ok());
+        });
     }
 
-    #[ignore]
     #[test]
     fn test_fee_slippage_guard_accepts_higher_fee() {
-        let env = Env::default();
-        let config = crate::config::ConfigManager::get_development_config(&env);
-        ConfigManager::store_config(&env, &config).unwrap();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let config = crate::config::ConfigManager::get_development_config(&env);
+            ConfigManager::store_config(&env, &config).unwrap();
 
-        // max_fee_bps higher than platform fee should pass
-        assert!(BetValidator::validate_fee_slippage(&env, 500).is_ok());
+            // max_fee_bps higher than platform fee should pass
+            assert!(BetValidator::validate_fee_slippage(&env, 500).is_ok());
+        });
     }
 
-    #[ignore]
     #[test]
     fn test_fee_slippage_guard_rejects_lower_fee() {
-        let env = Env::default();
-        let config = crate::config::ConfigManager::get_development_config(&env);
-        ConfigManager::store_config(&env, &config).unwrap();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let config = crate::config::ConfigManager::get_development_config(&env);
+            ConfigManager::store_config(&env, &config).unwrap();
 
-        // max_fee_bps lower than platform fee should fail
-        assert_eq!(
-            BetValidator::validate_fee_slippage(&env, 100),
-            Err(Error::FeeExceedsMax)
-        );
+            // max_fee_bps lower than platform fee should fail
+            assert_eq!(
+                BetValidator::validate_fee_slippage(&env, 100),
+                Err(Error::FeeExceedsMax)
+            );
+        });
     }
 
-    #[ignore]
     #[test]
     fn test_fee_slippage_guard_fallback_storage() {
-        let env = Env::default();
-        // Store platform fee in legacy storage key (used when ConfigManager fails)
-        env.storage()
-            .persistent()
-            .set(&Symbol::new(&env, "plat_fee"), &250i128);
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            // Store platform fee in legacy storage key (used when ConfigManager fails)
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "plat_fee"), &250i128);
 
-        // max_fee_bps equal to stored fee should pass
-        assert!(BetValidator::validate_fee_slippage(&env, 250).is_ok());
+            // max_fee_bps equal to stored fee should pass
+            assert!(BetValidator::validate_fee_slippage(&env, 250).is_ok());
 
-        // max_fee_bps lower than stored fee should fail
-        assert_eq!(
-            BetValidator::validate_fee_slippage(&env, 200),
-            Err(Error::FeeExceedsMax)
-        );
+            // max_fee_bps lower than stored fee should fail
+            assert_eq!(
+                BetValidator::validate_fee_slippage(&env, 200),
+                Err(Error::FeeExceedsMax)
+            );
+        });
     }
 
-    #[ignore]
     #[test]
     fn test_fee_slippage_guard_default_fallback() {
-        let env = Env::default();
-        // No config stored and no legacy storage - should use DEFAULT_PLATFORM_FEE_PERCENTAGE (200)
-        // max_fee_bps at default should pass
-        assert!(BetValidator::validate_fee_slippage(&env, 200).is_ok());
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            // No config stored and no legacy storage - should use DEFAULT_PLATFORM_FEE_PERCENTAGE (200)
+            // max_fee_bps at default should pass
+            assert!(BetValidator::validate_fee_slippage(&env, 200).is_ok());
 
-        // max_fee_bps below default should fail
-        assert_eq!(
-            BetValidator::validate_fee_slippage(&env, 150),
-            Err(Error::FeeExceedsMax)
-        );
+            // max_fee_bps below default should fail
+            assert_eq!(
+                BetValidator::validate_fee_slippage(&env, 150),
+                Err(Error::FeeExceedsMax)
+            );
+        });
     }
 
     // ===== FOCUSED TESTS FOR DOCUMENTED FUNCTIONS =====
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_get_effective_bet_limits_returns_defaults_when_empty() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_no_limits");
-        let limits = get_effective_bet_limits(&env, &market_id);
-        assert_eq!(limits.min_bet, MIN_BET_AMOUNT);
-        assert_eq!(limits.max_bet, MAX_BET_AMOUNT);
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_no_limits");
+            let limits = get_effective_bet_limits(&env, &market_id);
+            assert_eq!(limits.min_bet, MIN_BET_AMOUNT);
+            assert_eq!(limits.max_bet, MAX_BET_AMOUNT);
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_get_effective_bet_limits_prefers_per_event_over_global() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_evt");
-        let global = BetLimits {
-            min_bet: 2_000_000,
-            max_bet: 50_000_000_000,
-        };
-        set_global_bet_limits(&env, &global).unwrap();
-        let per_event = BetLimits {
-            min_bet: 5_000_000,
-            max_bet: 10_000_000_000,
-        };
-        set_event_bet_limits(&env, &market_id, &per_event).unwrap();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_evt");
+            let global = BetLimits {
+                min_bet: 2_000_000,
+                max_bet: 50_000_000_000,
+            };
+            set_global_bet_limits(&env, &global).unwrap();
+            let per_event = BetLimits {
+                min_bet: 5_000_000,
+                max_bet: 10_000_000_000,
+            };
+            set_event_bet_limits(&env, &market_id, &per_event).unwrap();
 
-        let limits = get_effective_bet_limits(&env, &market_id);
-        assert_eq!(limits.min_bet, 5_000_000);
-        assert_eq!(limits.max_bet, 10_000_000_000);
+            let limits = get_effective_bet_limits(&env, &market_id);
+            assert_eq!(limits.min_bet, 5_000_000);
+            assert_eq!(limits.max_bet, 10_000_000_000);
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_get_effective_bet_limits_falls_back_to_global() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_glb");
-        let global = BetLimits {
-            min_bet: 3_000_000,
-            max_bet: 80_000_000_000,
-        };
-        set_global_bet_limits(&env, &global).unwrap();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_glb");
+            let global = BetLimits {
+                min_bet: 3_000_000,
+                max_bet: 80_000_000_000,
+            };
+            set_global_bet_limits(&env, &global).unwrap();
 
-        let limits = get_effective_bet_limits(&env, &market_id);
-        assert_eq!(limits.min_bet, 3_000_000);
-        assert_eq!(limits.max_bet, 80_000_000_000);
+            let limits = get_effective_bet_limits(&env, &market_id);
+            assert_eq!(limits.min_bet, 3_000_000);
+            assert_eq!(limits.max_bet, 80_000_000_000);
+        });
     }
 
     #[test]
@@ -2105,28 +2121,32 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_set_event_bet_limits_persists_and_retrieves() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_set");
-        let limits = BetLimits {
-            min_bet: 2_500_000,
-            max_bet: 25_000_000_000,
-        };
-        set_event_bet_limits(&env, &market_id, &limits).unwrap();
-        let retrieved = get_effective_bet_limits(&env, &market_id);
-        assert_eq!(retrieved.min_bet, 2_500_000);
-        assert_eq!(retrieved.max_bet, 25_000_000_000);
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_set");
+            let limits = BetLimits {
+                min_bet: 2_500_000,
+                max_bet: 25_000_000_000,
+            };
+            set_event_bet_limits(&env, &market_id, &limits).unwrap();
+            let retrieved = get_effective_bet_limits(&env, &market_id);
+            assert_eq!(retrieved.min_bet, 2_500_000);
+            assert_eq!(retrieved.max_bet, 25_000_000_000);
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_set_market_max_bet_cap_and_get() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_cap");
-        assert_eq!(get_market_max_bet_cap(&env, &market_id), None);
-        set_market_max_bet_cap(&env, &market_id, 5_000_000).unwrap();
-        assert_eq!(get_market_max_bet_cap(&env, &market_id), Some(5_000_000));
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_cap");
+            assert_eq!(get_market_max_bet_cap(&env, &market_id), None);
+            set_market_max_bet_cap(&env, &market_id, 5_000_000).unwrap();
+            assert_eq!(get_market_max_bet_cap(&env, &market_id), Some(5_000_000));
+        });
     }
 
     #[test]
@@ -2160,174 +2180,194 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_remove_market_max_bet_cap() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_rm");
-        set_market_max_bet_cap(&env, &market_id, 5_000_000).unwrap();
-        assert_eq!(get_market_max_bet_cap(&env, &market_id), Some(5_000_000));
-        remove_market_max_bet_cap(&env, &market_id);
-        assert_eq!(get_market_max_bet_cap(&env, &market_id), None);
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_rm");
+            set_market_max_bet_cap(&env, &market_id, 5_000_000).unwrap();
+            assert_eq!(get_market_max_bet_cap(&env, &market_id), Some(5_000_000));
+            remove_market_max_bet_cap(&env, &market_id);
+            assert_eq!(get_market_max_bet_cap(&env, &market_id), None);
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_bet_analytics_implied_probability_empty_market() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_empty");
-        let outcome = String::from_str(&env, "yes");
-        assert_eq!(
-            BetAnalytics::calculate_implied_probability(&env, &market_id, &outcome),
-            0
-        );
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_empty");
+            let outcome = String::from_str(&env, "yes");
+            assert_eq!(
+                BetAnalytics::calculate_implied_probability(&env, &market_id, &outcome),
+                0
+            );
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_bet_analytics_implied_probability_with_data() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_prob");
-        let yes = String::from_str(&env, "yes");
-        let no = String::from_str(&env, "no");
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_prob");
+            let yes = String::from_str(&env, "yes");
+            let no = String::from_str(&env, "no");
 
-        // Seed stats: 75 on "yes", 25 on "no" => 75% implied
-        let mut stats = BetStats {
-            total_bets: 2,
-            total_amount_locked: 100,
-            unique_bettors: 2,
-            outcome_totals: soroban_sdk::Map::new(&env),
-        };
-        stats.outcome_totals.set(yes.clone(), 75);
-        stats.outcome_totals.set(no.clone(), 25);
-        BetStorage::store_market_bet_stats(&env, &market_id, &stats).unwrap();
+            // Seed stats: 75 on "yes", 25 on "no" => 75% implied
+            let mut stats = BetStats {
+                total_bets: 2,
+                total_amount_locked: 100,
+                unique_bettors: 2,
+                outcome_totals: soroban_sdk::Map::new(&env),
+            };
+            stats.outcome_totals.set(yes.clone(), 75);
+            stats.outcome_totals.set(no.clone(), 25);
+            BetStorage::store_market_bet_stats(&env, &market_id, &stats).unwrap();
 
-        assert_eq!(
-            BetAnalytics::calculate_implied_probability(&env, &market_id, &yes),
-            75
-        );
-        assert_eq!(
-            BetAnalytics::calculate_implied_probability(&env, &market_id, &no),
-            25
-        );
+            assert_eq!(
+                BetAnalytics::calculate_implied_probability(&env, &market_id, &yes),
+                75
+            );
+            assert_eq!(
+                BetAnalytics::calculate_implied_probability(&env, &market_id, &no),
+                25
+            );
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_bet_analytics_payout_multiplier_empty_outcome() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_mult_empty");
-        let outcome = String::from_str(&env, "yes");
-        assert_eq!(
-            BetAnalytics::calculate_payout_multiplier(&env, &market_id, &outcome),
-            0
-        );
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_mult_empty");
+            let outcome = String::from_str(&env, "yes");
+            assert_eq!(
+                BetAnalytics::calculate_payout_multiplier(&env, &market_id, &outcome),
+                0
+            );
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_bet_analytics_payout_multiplier_with_data() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_mult");
-        let yes = String::from_str(&env, "yes");
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_mult");
+            let yes = String::from_str(&env, "yes");
 
-        let mut stats = BetStats {
-            total_bets: 1,
-            total_amount_locked: 100,
-            unique_bettors: 1,
-            outcome_totals: soroban_sdk::Map::new(&env),
-        };
-        stats.outcome_totals.set(yes.clone(), 20);
-        BetStorage::store_market_bet_stats(&env, &market_id, &stats).unwrap();
+            let mut stats = BetStats {
+                total_bets: 1,
+                total_amount_locked: 100,
+                unique_bettors: 1,
+                outcome_totals: soroban_sdk::Map::new(&env),
+            };
+            stats.outcome_totals.set(yes.clone(), 20);
+            BetStorage::store_market_bet_stats(&env, &market_id, &stats).unwrap();
 
-        // multiplier = (100 * 100) / 20 = 500
-        assert_eq!(
-            BetAnalytics::calculate_payout_multiplier(&env, &market_id, &yes),
-            500
-        );
+            // multiplier = (100 * 100) / 20 = 500
+            assert_eq!(
+                BetAnalytics::calculate_payout_multiplier(&env, &market_id, &yes),
+                500
+            );
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_bet_analytics_get_market_summary_delegates() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_sum");
-        let stats = BetStats {
-            total_bets: 5,
-            total_amount_locked: 50_000_000,
-            unique_bettors: 5,
-            outcome_totals: soroban_sdk::Map::new(&env),
-        };
-        BetStorage::store_market_bet_stats(&env, &market_id, &stats).unwrap();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_sum");
+            let stats = BetStats {
+                total_bets: 5,
+                total_amount_locked: 50_000_000,
+                unique_bettors: 5,
+                outcome_totals: soroban_sdk::Map::new(&env),
+            };
+            BetStorage::store_market_bet_stats(&env, &market_id, &stats).unwrap();
 
-        let summary = BetAnalytics::get_market_summary(&env, &market_id);
-        assert_eq!(summary.total_bets, 5);
-        assert_eq!(summary.total_amount_locked, 50_000_000);
-        assert_eq!(summary.unique_bettors, 5);
+            let summary = BetAnalytics::get_market_summary(&env, &market_id);
+            assert_eq!(summary.total_bets, 5);
+            assert_eq!(summary.total_amount_locked, 50_000_000);
+            assert_eq!(summary.unique_bettors, 5);
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_bet_storage_store_and_get_roundtrip() {
-        let env = Env::default();
-        let user = Address::generate(&env);
-        let market_id = Symbol::new(&env, "mkt_rt");
-        let outcome = String::from_str(&env, "yes");
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let user = Address::generate(&env);
+            let market_id = Symbol::new(&env, "mkt_rt");
+            let outcome = String::from_str(&env, "yes");
 
-        let bet = Bet::new(&env, user.clone(), market_id.clone(), outcome, 10_000_000);
-        BetStorage::store_bet(&env, &bet).unwrap();
+            let bet = Bet::new(&env, user.clone(), market_id.clone(), outcome, 10_000_000);
+            BetStorage::store_bet(&env, &bet).unwrap();
 
-        let stored = BetStorage::get_bet(&env, &market_id, &user).unwrap();
-        assert_eq!(stored.amount, 10_000_000);
-        assert_eq!(stored.status, BetStatus::Active);
+            let stored = BetStorage::get_bet(&env, &market_id, &user).unwrap();
+            assert_eq!(stored.amount, 10_000_000);
+            assert_eq!(stored.status, BetStatus::Active);
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_bet_storage_remove_bet() {
-        let env = Env::default();
-        let user = Address::generate(&env);
-        let market_id = Symbol::new(&env, "mkt_rm_bet");
-        let outcome = String::from_str(&env, "no");
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let user = Address::generate(&env);
+            let market_id = Symbol::new(&env, "mkt_rm_bet");
+            let outcome = String::from_str(&env, "no");
 
-        let bet = Bet::new(&env, user.clone(), market_id.clone(), outcome, 5_000_000);
-        BetStorage::store_bet(&env, &bet).unwrap();
-        assert!(BetStorage::get_bet(&env, &market_id, &user).is_some());
+            let bet = Bet::new(&env, user.clone(), market_id.clone(), outcome, 5_000_000);
+            BetStorage::store_bet(&env, &bet).unwrap();
+            assert!(BetStorage::get_bet(&env, &market_id, &user).is_some());
 
-        BetStorage::remove_bet(&env, &market_id, &user);
-        assert!(BetStorage::get_bet(&env, &market_id, &user).is_none());
+            BetStorage::remove_bet(&env, &market_id, &user);
+            assert!(BetStorage::get_bet(&env, &market_id, &user).is_none());
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_bet_storage_get_all_bets_for_market_empty() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_none");
-        let bettors = BetStorage::get_all_bets_for_market(&env, &market_id);
-        assert_eq!(bettors.len(), 0);
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_none");
+            let bettors = BetStorage::get_all_bets_for_market(&env, &market_id);
+            assert_eq!(bettors.len(), 0);
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_bet_storage_get_all_bets_for_market_multiple() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_multi");
-        let user1 = Address::generate(&env);
-        let user2 = Address::generate(&env);
-        let outcome = String::from_str(&env, "yes");
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_multi");
+            let user1 = Address::generate(&env);
+            let user2 = Address::generate(&env);
+            let outcome = String::from_str(&env, "yes");
 
-        let bet1 = Bet::new(
-            &env,
-            user1.clone(),
-            market_id.clone(),
-            outcome.clone(),
-            1_000_000,
-        );
-        let bet2 = Bet::new(&env, user2.clone(), market_id.clone(), outcome, 2_000_000);
-        BetStorage::store_bet(&env, &bet1).unwrap();
-        BetStorage::store_bet(&env, &bet2).unwrap();
+            let bet1 = Bet::new(
+                &env,
+                user1.clone(),
+                market_id.clone(),
+                outcome.clone(),
+                1_000_000,
+            );
+            let bet2 = Bet::new(&env, user2.clone(), market_id.clone(), outcome, 2_000_000);
+            BetStorage::store_bet(&env, &bet1).unwrap();
+            BetStorage::store_bet(&env, &bet2).unwrap();
 
-        let bettors = BetStorage::get_all_bets_for_market(&env, &market_id);
-        assert_eq!(bettors.len(), 2);
+            let bettors = BetStorage::get_all_bets_for_market(&env, &market_id);
+            assert_eq!(bettors.len(), 2);
+        });
     }
 
     #[test]
@@ -2364,150 +2404,166 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_validate_bet_amount_against_limits_uses_per_event() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_lim");
-        let per_event = BetLimits {
-            min_bet: 5_000_000,
-            max_bet: 20_000_000_000,
-        };
-        set_event_bet_limits(&env, &market_id, &per_event).unwrap();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_lim");
+            let per_event = BetLimits {
+                min_bet: 5_000_000,
+                max_bet: 20_000_000_000,
+            };
+            set_event_bet_limits(&env, &market_id, &per_event).unwrap();
 
-        // Below per-event min
-        assert_eq!(
-            BetValidator::validate_bet_amount_against_limits(&env, &market_id, 1_000_000),
-            Err(Error::InsufficientStake)
-        );
-        // Within per-event bounds
-        assert!(
-            BetValidator::validate_bet_amount_against_limits(&env, &market_id, 10_000_000).is_ok()
-        );
-        // Above per-event max
-        assert_eq!(
-            BetValidator::validate_bet_amount_against_limits(&env, &market_id, 30_000_000_000),
-            Err(Error::InvalidInput)
-        );
+            // Below per-event min
+            assert_eq!(
+                BetValidator::validate_bet_amount_against_limits(&env, &market_id, 1_000_000),
+                Err(Error::InsufficientStake)
+            );
+            // Within per-event bounds
+            assert!(
+                BetValidator::validate_bet_amount_against_limits(&env, &market_id, 10_000_000)
+                    .is_ok()
+            );
+            // Above per-event max
+            assert_eq!(
+                BetValidator::validate_bet_amount_against_limits(&env, &market_id, 30_000_000_000),
+                Err(Error::InvalidInput)
+            );
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_validate_bet_amount_against_limits_enforces_market_cap() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_cap_val");
-        set_market_max_bet_cap(&env, &market_id, 3_000_000).unwrap();
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_cap_val");
+            set_market_max_bet_cap(&env, &market_id, 3_000_000).unwrap();
 
-        // Within global limits but above per-market cap
-        assert_eq!(
-            BetValidator::validate_bet_amount_against_limits(&env, &market_id, 4_000_000),
-            Err(Error::BetExceedsCap)
-        );
-        // Within per-market cap
-        assert!(
-            BetValidator::validate_bet_amount_against_limits(&env, &market_id, 2_000_000).is_ok()
-        );
+            // Within global limits but above per-market cap
+            assert_eq!(
+                BetValidator::validate_bet_amount_against_limits(&env, &market_id, 4_000_000),
+                Err(Error::BetExceedsCap)
+            );
+            // Within per-market cap
+            assert!(
+                BetValidator::validate_bet_amount_against_limits(&env, &market_id, 2_000_000)
+                    .is_ok()
+            );
+        });
     }
 
     // ===== ISSUE #1395: ATOMIC SINGLE-BET PREPARATION =====
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_atomic_bet_stats_are_prepared_without_writing_storage() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_atomic");
-        let outcome = String::from_str(&env, "yes");
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_atomic");
+            let outcome = String::from_str(&env, "yes");
 
-        let mut stats = BetStats {
-            total_bets: 1,
-            total_amount_locked: 5_000_000,
-            unique_bettors: 1,
-            outcome_totals: soroban_sdk::Map::new(&env),
-        };
-        stats.outcome_totals.set(outcome.clone(), 5_000_000);
-        BetStorage::store_market_bet_stats(&env, &market_id, &stats).unwrap();
+            let mut stats = BetStats {
+                total_bets: 1,
+                total_amount_locked: 5_000_000,
+                unique_bettors: 1,
+                outcome_totals: soroban_sdk::Map::new(&env),
+            };
+            stats.outcome_totals.set(outcome.clone(), 5_000_000);
+            BetStorage::store_market_bet_stats(&env, &market_id, &stats).unwrap();
 
-        let prepared =
-            BetManager::prepare_market_bet_stats(&env, &market_id, &outcome, 2_000_000).unwrap();
+            let prepared =
+                BetManager::prepare_market_bet_stats(&env, &market_id, &outcome, 2_000_000)
+                    .unwrap();
 
-        assert_eq!(prepared.total_bets, 2);
-        assert_eq!(prepared.total_amount_locked, 7_000_000);
-        assert_eq!(prepared.unique_bettors, 2);
-        assert_eq!(
-            prepared.outcome_totals.get(outcome.clone()),
-            Some(7_000_000)
-        );
+            assert_eq!(prepared.total_bets, 2);
+            assert_eq!(prepared.total_amount_locked, 7_000_000);
+            assert_eq!(prepared.unique_bettors, 2);
+            assert_eq!(
+                prepared.outcome_totals.get(outcome.clone()),
+                Some(7_000_000)
+            );
 
-        // Preparation must be read-only. The commit happens only after funds lock.
-        let stored = BetStorage::get_market_bet_stats(&env, &market_id);
-        assert_eq!(stored.total_bets, 1);
-        assert_eq!(stored.total_amount_locked, 5_000_000);
-        assert_eq!(stored.unique_bettors, 1);
-        assert_eq!(stored.outcome_totals.get(outcome), Some(5_000_000));
+            // Preparation must be read-only. The commit happens only after funds lock.
+            let stored = BetStorage::get_market_bet_stats(&env, &market_id);
+            assert_eq!(stored.total_bets, 1);
+            assert_eq!(stored.total_amount_locked, 5_000_000);
+            assert_eq!(stored.unique_bettors, 1);
+            assert_eq!(stored.outcome_totals.get(outcome), Some(5_000_000));
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_atomic_bet_stats_overflow_is_rejected_before_commit() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_oflow");
-        let outcome = String::from_str(&env, "yes");
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_oflow");
+            let outcome = String::from_str(&env, "yes");
 
-        let mut stats = BetStats {
-            total_bets: 1,
-            total_amount_locked: i128::MAX,
-            unique_bettors: 1,
-            outcome_totals: soroban_sdk::Map::new(&env),
-        };
-        stats.outcome_totals.set(outcome.clone(), 1);
-        BetStorage::store_market_bet_stats(&env, &market_id, &stats).unwrap();
+            let mut stats = BetStats {
+                total_bets: 1,
+                total_amount_locked: i128::MAX,
+                unique_bettors: 1,
+                outcome_totals: soroban_sdk::Map::new(&env),
+            };
+            stats.outcome_totals.set(outcome.clone(), 1);
+            BetStorage::store_market_bet_stats(&env, &market_id, &stats).unwrap();
 
-        assert_eq!(
-            BetManager::prepare_market_bet_stats(&env, &market_id, &outcome, 1).err(),
-            Some(Error::Overflow)
-        );
+            assert_eq!(
+                BetManager::prepare_market_bet_stats(&env, &market_id, &outcome, 1).err(),
+                Some(Error::Overflow)
+            );
 
-        let stored = BetStorage::get_market_bet_stats(&env, &market_id);
-        assert_eq!(stored.total_amount_locked, i128::MAX);
-        assert_eq!(stored.total_bets, 1);
+            let stored = BetStorage::get_market_bet_stats(&env, &market_id);
+            assert_eq!(stored.total_amount_locked, i128::MAX);
+            assert_eq!(stored.total_bets, 1);
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_atomic_user_stake_is_prepared_without_writing_storage() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_usr");
-        let user = Address::generate(&env);
-        let key = crate::storage::DataKey::UserStake(user.clone(), market_id.clone());
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_usr");
+            let user = Address::generate(&env);
+            let key = crate::storage::DataKey::UserStake(user.clone(), market_id.clone());
 
-        env.storage().persistent().set(&key, &5_000_000i128);
+            env.storage().persistent().set(&key, &5_000_000i128);
 
-        let prepared =
-            BetValidator::prepare_user_stake_update(&env, &market_id, &user, 2_000_000).unwrap();
+            let prepared =
+                BetValidator::prepare_user_stake_update(&env, &market_id, &user, 2_000_000)
+                    .unwrap();
 
-        assert_eq!(prepared, 7_000_000);
-        assert_eq!(
-            BetValidator::get_user_stake(&env, &market_id, &user),
-            5_000_000
-        );
+            assert_eq!(prepared, 7_000_000);
+            assert_eq!(
+                BetValidator::get_user_stake(&env, &market_id, &user),
+                5_000_000
+            );
+        });
     }
 
     #[test]
-    #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
     fn test_atomic_user_stake_overflow_is_rejected_before_commit() {
-        let env = Env::default();
-        let market_id = Symbol::new(&env, "mkt_uof");
-        let user = Address::generate(&env);
-        let key = crate::storage::DataKey::UserStake(user.clone(), market_id.clone());
+        let ctx = crate::testutil::TestCtx::uninitialized();
+        let env = ctx.env.clone();
+        ctx.with_contract(|| {
+            let market_id = Symbol::new(&env, "mkt_uof");
+            let user = Address::generate(&env);
+            let key = crate::storage::DataKey::UserStake(user.clone(), market_id.clone());
 
-        env.storage().persistent().set(&key, &i128::MAX);
+            env.storage().persistent().set(&key, &i128::MAX);
 
-        assert_eq!(
-            BetValidator::prepare_user_stake_update(&env, &market_id, &user, 1),
-            Err(Error::Overflow)
-        );
-        assert_eq!(
-            BetValidator::get_user_stake(&env, &market_id, &user),
-            i128::MAX
-        );
+            assert_eq!(
+                BetValidator::prepare_user_stake_update(&env, &market_id, &user, 1),
+                Err(Error::Overflow)
+            );
+            assert_eq!(
+                BetValidator::get_user_stake(&env, &market_id, &user),
+                i128::MAX
+            );
+        });
     }
 }
