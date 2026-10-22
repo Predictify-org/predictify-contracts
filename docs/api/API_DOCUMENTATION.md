@@ -73,6 +73,30 @@ For exact runtime behavior and error variants, also reference:
 - `contracts/predictify-hybrid/src/err.rs`
 - `contracts/predictify-hybrid/src/events.rs`
 
+### Full-build administrative state changes
+
+These full-build entrypoints require the primary admin address and its
+authentication. Successful calls emit an admin-action event and append an
+audit entry attributed to that admin:
+
+```rust
+pub fn cleanup_old_market_data(env: Env, admin: Address, market_id: Symbol) -> Result<bool, Error>
+pub fn migrate_storage_format(env: Env, admin: Address, from_format: StorageFormat, to_format: StorageFormat) -> Result<StorageMigration, Error>
+pub fn update_storage_config(env: Env, admin: Address, config: StorageConfig) -> Result<(), Error>
+pub fn track_contract_version(env: Env, admin: Address, version: Version) -> Result<(), Error>
+pub fn migrate_data_between_versions(env: Env, admin: Address, old_version: Version, new_version: Version) -> Result<VersionMigration, Error>
+pub fn upgrade_to_version(env: Env, admin: Address, target_version: Version) -> Result<(), Error>
+pub fn rollback_to_version(env: Env, admin: Address, target_version: Version) -> Result<(), Error>
+```
+
+Storage configuration rejects a zero cleanup threshold or TTLs below the
+minimums documented in `docs/STORAGE_TIER.md`. Cleanup rejects future-dated
+markets, outstanding refunds, and unclaimed winning payouts while the claim
+window remains open. Version tracking requires a strictly increasing version
+and retains at most 32 entries. The caller-supplied
+`emit_error_recovery_event` and `emit_monitoring_alert` endpoints have been
+removed; callers cannot forge these contract-originated events.
+
 ### Market Management Functions
 
 #### `create_market()`
@@ -825,4 +849,3 @@ soroban contract invoke \
 **API Version:** v1.0.0  
 **Documentation Version:** 1.2  
 **ReflectorAsset Coverage:** Production Ready with ≥95% Test Coverage
-

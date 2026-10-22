@@ -269,6 +269,17 @@ fn store_market_with_retention(env: &Env, market_id: &Symbol, market: &Market) {
     );
 }
 
+#[cfg(feature = "full")]
+fn record_full_admin_action(
+    env: &Env,
+    admin: &Address,
+    action: &str,
+    audit_action: crate::audit_trail::AuditAction,
+) {
+    EventEmitter::emit_admin_action_logged(env, admin, action, &true);
+    AuditTrailManager::append_record(env, audit_action, admin.clone(), Map::new(env), None);
+}
+
 impl From<crate::reentrancy_guard::GuardError> for Error {
     fn from(_err: crate::reentrancy_guard::GuardError) -> Self {
         Error::InvalidState
@@ -6240,8 +6251,20 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     #[cfg(feature = "full")]
-    pub fn cleanup_old_market_data(env: Env, market_id: Symbol) -> Result<bool, Error> {
-        storage::StorageOptimizer::cleanup_old_market_data(&env, &market_id)
+    pub fn cleanup_old_market_data(
+        env: Env,
+        admin: Address,
+        market_id: Symbol,
+    ) -> Result<bool, Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        let cleaned = storage::StorageOptimizer::cleanup_old_market_data(&env, &market_id)?;
+        record_full_admin_action(
+            &env,
+            &admin,
+            "cleanup_old_market_data",
+            crate::audit_trail::AuditAction::StorageOptimized,
+        );
+        Ok(cleaned)
     }
 
     /// Migrate storage format from old to new format
@@ -6256,21 +6279,20 @@ impl PredictifyHybrid {
     #[cfg(feature = "full")]
     pub fn migrate_storage_format(
         env: Env,
+        admin: Address,
         from_format: storage::StorageFormat,
         to_format: storage::StorageFormat,
     ) -> Result<storage::StorageMigration, Error> {
-        let result =
-            storage::StorageOptimizer::migrate_storage_format(&env, from_format, to_format);
-
-        crate::audit_trail::AuditTrailManager::append_record(
+        Self::require_primary_admin(&env, &admin)?;
+        let migration =
+            storage::StorageOptimizer::migrate_storage_format(&env, from_format, to_format)?;
+        record_full_admin_action(
             &env,
+            &admin,
+            "migrate_storage_format",
             crate::audit_trail::AuditAction::StorageMigrated,
-            env.current_contract_address(),
-            Map::new(&env),
-            None,
         );
-
-        result
+        Ok(migration)
     }
 
     /// Read-only recovery dry run for ops verification.
@@ -6415,8 +6437,20 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     #[cfg(feature = "full")]
-    pub fn update_storage_config(env: Env, config: storage::StorageConfig) -> Result<(), Error> {
-        storage::StorageOptimizer::update_storage_config(&env, &config)
+    pub fn update_storage_config(
+        env: Env,
+        admin: Address,
+        config: storage::StorageConfig,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        storage::StorageOptimizer::update_storage_config(&env, &config)?;
+        record_full_admin_action(
+            &env,
+            &admin,
+            "update_storage_config",
+            crate::audit_trail::AuditAction::StorageOptimized,
+        );
+        Ok(())
     }
 
     /// Calculate storage cost for a market
@@ -6525,20 +6559,6 @@ impl PredictifyHybrid {
     #[cfg(feature = "full")]
     pub fn get_error_recovery_status(env: Env) -> Result<errors::ErrorRecoveryStatus, Error> {
         errors::ErrorHandler::get_error_recovery_status(&env)
-    }
-
-    /// Emit error recovery event for monitoring and logging
-    ///
-    /// # Errors
-    ///
-    /// This entrypoint surfaces contract errors via panic in internal calls.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    #[cfg(feature = "full")]
-    pub fn emit_error_recovery_event(env: Env, recovery: errors::ErrorRecovery) {
-        errors::ErrorHandler::emit_error_recovery_event(&env, &recovery);
     }
 
     /// Validate resilience patterns configuration
@@ -6907,8 +6927,20 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     #[cfg(feature = "full")]
-    pub fn track_contract_version(env: Env, version: versioning::Version) -> Result<(), Error> {
-        versioning::VersionManager::new(&env).track_contract_version(&env, version)
+    pub fn track_contract_version(
+        env: Env,
+        admin: Address,
+        version: versioning::Version,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        versioning::VersionManager::new(&env).track_contract_version(&env, version)?;
+        record_full_admin_action(
+            &env,
+            &admin,
+            "track_contract_version",
+            crate::audit_trail::AuditAction::ContractUpgraded,
+        );
+        Ok(())
     }
 
     /// Migrate data between contract versions
@@ -6923,14 +6955,23 @@ impl PredictifyHybrid {
     #[cfg(feature = "full")]
     pub fn migrate_data_between_versions(
         env: Env,
+        admin: Address,
         old_version: versioning::Version,
         new_version: versioning::Version,
     ) -> Result<versioning::VersionMigration, Error> {
-        versioning::VersionManager::new(&env).migrate_data_between_versions(
+        Self::require_primary_admin(&env, &admin)?;
+        let migration = versioning::VersionManager::new(&env).migrate_data_between_versions(
             &env,
             old_version,
             new_version,
-        )
+        )?;
+        record_full_admin_action(
+            &env,
+            &admin,
+            "migrate_data_between_versions",
+            crate::audit_trail::AuditAction::StorageMigrated,
+        );
+        Ok(migration)
     }
 
     /// Validate version compatibility
@@ -6965,8 +7006,20 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     #[cfg(feature = "full")]
-    pub fn upgrade_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
-        versioning::VersionManager::new(&env).upgrade_to_version(&env, target_version)
+    pub fn upgrade_to_version(
+        env: Env,
+        admin: Address,
+        target_version: versioning::Version,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        versioning::VersionManager::new(&env).upgrade_to_version(&env, target_version)?;
+        record_full_admin_action(
+            &env,
+            &admin,
+            "upgrade_to_version",
+            crate::audit_trail::AuditAction::ContractUpgraded,
+        );
+        Ok(())
     }
 
     /// Rollback to a specific version
@@ -6979,8 +7032,20 @@ impl PredictifyHybrid {
     ///
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     #[cfg(feature = "full")]
-    pub fn rollback_to_version(env: Env, target_version: versioning::Version) -> Result<(), Error> {
-        versioning::VersionManager::new(&env).rollback_to_version(&env, target_version)
+    pub fn rollback_to_version(
+        env: Env,
+        admin: Address,
+        target_version: versioning::Version,
+    ) -> Result<(), Error> {
+        Self::require_primary_admin(&env, &admin)?;
+        versioning::VersionManager::new(&env).rollback_to_version(&env, target_version)?;
+        record_full_admin_action(
+            &env,
+            &admin,
+            "rollback_to_version",
+            crate::audit_trail::AuditAction::UpgradeRolledBack,
+        );
+        Ok(())
     }
 
     /// Get version history
@@ -7099,23 +7164,6 @@ impl PredictifyHybrid {
         timeframe: monitoring::TimeFrame,
     ) -> Result<monitoring::PerformanceMetrics, Error> {
         monitoring::ContractMonitor::get_contract_performance_metrics(&env, timeframe)
-    }
-
-    /// Emit monitoring alert
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error`] when validation, authorization, storage, or subsystem checks fail.
-    ///
-    /// # Events
-    ///
-    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
-    #[cfg(feature = "full")]
-    pub fn emit_monitoring_alert(
-        env: Env,
-        alert: monitoring::MonitoringAlert,
-    ) -> Result<(), Error> {
-        monitoring::ContractMonitor::emit_monitoring_alert(&env, alert)
     }
 
     /// Validate monitoring data integrity
