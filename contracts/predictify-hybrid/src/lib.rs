@@ -7471,6 +7471,59 @@ impl PredictifyHybrid {
         admin::AdminSystemIntegration::is_migrated(&env)
     }
 
+    /// Migrate the legacy market ID registry to sharded storage
+    ///
+    /// Processes migration in batches to respect transaction limits. Call repeatedly
+    /// until `is_complete` returns `true`. This is idempotent and safe to call multiple times.
+    ///
+    /// # Parameters
+    ///
+    /// - `admin`: The admin address authorizing the migration
+    /// - `batch_size`: Number of entries to migrate in this call (capped at 100)
+    ///
+    /// # Returns
+    ///
+    /// A tuple `(migrated_count, total_count, is_complete)`:
+    /// - `migrated_count`: Entries migrated in this call
+    /// - `total_count`: Total entries in legacy registry
+    /// - `is_complete`: `true` when migration is finished
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
+    pub fn migrate_market_id_registry(env: Env, admin: Address, batch_size: u32) -> (u32, u32, bool) {
+        market_id_generator::MarketIdGenerator::migrate_market_id_registry(&env, &admin, batch_size)
+    }
+
+    /// Migrate admin counters from legacy Map to sharded storage
+    ///
+    /// Processes all admin counters in a single call. Idempotent and safe to call multiple times.
+    ///
+    /// # Parameters
+    ///
+    /// - `admin`: The admin address authorizing the migration
+    ///
+    /// # Returns
+    ///
+    /// The number of admin counters migrated.
+    ///
+    /// # Errors
+    ///
+    /// This entrypoint surfaces contract errors via panic in internal calls.
+    ///
+    /// # Events
+    ///
+    /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
+    #[cfg(feature = "full")]
+    pub fn migrate_admin_counters(env: Env, admin: Address) -> u32 {
+        market_id_generator::MarketIdGenerator::migrate_admin_counters(&env, &admin)
+    }
+
     /// Check role permissions against a specific permission
     ///
     /// # Errors
