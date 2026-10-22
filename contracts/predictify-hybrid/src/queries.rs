@@ -15,10 +15,81 @@
 //! 2. **User Bet Queries** - Get user-specific voting and staking information
 //! 3. **Contract State Queries** - Retrieve global contract state and statistics
 //! 4. **Analytics Queries** - Get aggregated market analytics and performance metrics
+//!
+//! # Gap Analysis — Reconciled (2026-06-18, supersedes 2026-04-23)
+//!
+//! Status of every getter originally flagged in the gap analysis.
+//! Verification: `grep -n "pub fn <name>" contracts/predictify-hybrid/src/**/*.rs`
+//!
+//! ## Admin / Multisig Getters
+//!
+//! | Getter | Status | Call path |
+//! |--------|--------|-----------|
+//! | `get_admin_role` / `get_admin_roles` | **Implemented** | `QueryManager::query_admin_role` / `query_admin_roles` (this module) → `AdminManager` in `admin.rs` |
+//! | `has_permission` | **Implemented** | `QueryManager::query_has_permission` (this module) → `AdminManager::validate_admin_permission` in `admin.rs` |
+//! | `get_permissions_for_role` | **Implemented** | Not surfaced via `QueryManager`; call `AdminRoleManager::get_permissions_for_role` in `admin.rs` directly |
+//! | `get_multisig_config` | **Implemented** | `QueryManager::query_multisig_config` (this module) |
+//! | `requires_multisig` | **Implemented** | `QueryManager::query_requires_multisig` (this module) → `MultisigManager::requires_multisig` in `admin.rs` |
+//!
+//! ## Bet Limit Getters
+//!
+//! | Getter | Status | Call path |
+//! |--------|--------|-----------|
+//! | `get_effective_bet_limits` | **Implemented** | Not surfaced via `QueryManager`; call `get_effective_bet_limits(env, market_id)` in `bets.rs` directly, or via `lib.rs` contract entry-point |
+//! | `get_global_bet_limits` | **Planned** | No standalone getter exists; global limits are read inside `get_effective_bet_limits` in `bets.rs` |
+//!
+//! ## Oracle Getters
+//!
+//! | Getter | Status | Call path |
+//! |--------|--------|-----------|
+//! | `get_oracle_resolution` | **Stubbed** | `ResolutionManager::get_oracle_resolution` in `resolution.rs` — always returns `Ok(None)`; full persistence not yet implemented |
+//! | `get_approved_oracles` | **Implemented** | `QueryManager::query_approved_oracles` (this module) → `OracleWhitelist::get_approved_oracles` in `oracles.rs` |
+//! | `get_oracle_metadata` | **Implemented** | `QueryManager::query_oracle_metadata` (this module) → persistent storage via `OracleWhitelistKey` in `oracles.rs` |
+//! | `get_global_oracle_config` | **Planned** | No implementation exists in any module |
+//!
+//! ## Dispute Getters
+//!
+//! | Getter | Status | Call path |
+//! |--------|--------|-----------|
+//! | `get_dispute_stats` | **Implemented** | `QueryManager::query_dispute_stats` (this module) → `DisputeManager::get_dispute_stats` in `disputes.rs` |
+//! | `get_market_disputes` | **Implemented** | `QueryManager::query_market_disputes` (this module) → `DisputeManager::get_market_disputes` in `disputes.rs` |
+//! | `get_dispute_votes` | **Implemented** | `QueryManager::query_dispute_votes` (this module) → `DisputeManager::get_dispute_votes` in `disputes.rs` |
+//! | `get_dispute_timeout_status` | **Implemented** | Not surfaced via `QueryManager`; call `DisputeManager::get_dispute_timeout_status` in `disputes.rs` directly |
+//!
+//! ## Governance Getters
+//!
+//! | Getter | Status | Call path |
+//! |--------|--------|-----------|
+//! | `list_proposals` | **Implemented** | `QueryManager::query_proposals` (this module) → `GovernanceContract::list_proposals` in `governance.rs` |
+//! | `get_proposal` | **Implemented** | `QueryManager::query_proposal_details` (this module) → `GovernanceContract::get_proposal` in `governance.rs` |
+//!
+//! ## Config Getters
+//!
+//! | Getter | Status | Call path |
+//! |--------|--------|-----------|
+//! | `get_config` | **Implemented** | Not surfaced via `QueryManager`; call `ConfigManager::get_config` in `config.rs` directly |
+//! | `get_configuration_history` | **Implemented** | Not surfaced via `QueryManager`; call `ConfigManager::get_configuration_history` in `config.rs` directly |
+//!
+//! ## Previously-Noted Inconsistencies
+//!
+//! | Issue | Status |
+//! |-------|--------|
+//! | `query_event_details` missing `created_at` | **Fixed** — field populated from `EventManager::get_event` |
+//! | `query_user_bet` missing `voted_at` | **Fixed** — field populated from `BetManager::get_bet` timestamp |
+//! | `query_contract_state` stubbed metrics (`unique_users`, `total_fees_collected`) | **Stubbed** — `unique_users` proxied via `DashboardStatisticsV1`; `total_fees_collected` sourced from `StatisticsManager`; token-balance fields still TODO (see issue #595) |
+
+use alloc::string::ToString;
 
 use crate::{
+    admin::{AdminManager, AdminPermission, AdminRole, MultisigConfig},
+    bets::BetManager,
+    disputes::{Dispute, DisputeManager, DisputeStats, DisputeVote},
     errors::Error,
+    governance::{GovernanceContract, GovernanceProposal},
     markets::{MarketAnalytics, MarketStateManager, MarketValidator},
+    oracles::{OracleMetadata, OracleWhitelist},
+    statistics::StatisticsManager,
+    storage::EventManager,
     types::{Market, MarketState, PagedMarketIds, PagedUserBets},
     voting::VotingStats,
 };
@@ -51,6 +122,130 @@ pub const MAX_PAGE_SIZE: u32 = 50;
 pub struct QueryManager;
 
 impl QueryManager {
+    // ===== ADMIN & MULTISIG QUERIES =====
+
+    /// Query the role of a specific admin address.
+    pub fn query_admin_role(env: &Env, admin: Address) -> Result<AdminRole, Error> {
+        AdminManager::get_admin_role_for_address(env, &admin).ok_or(Error::Unauthorized)
+    }
+
+    /// Query all active admin roles and their addresses.
+    pub fn query_admin_roles(env: &Env) -> Result<Map<Address, AdminRole>, Error> {
+        Ok(AdminManager::get_admin_roles(env))
+    }
+
+    /// Check if an admin has a specific permission for an action.
+    pub fn query_has_permission(env: &Env, admin: Address, action: String) -> Result<bool, Error> {
+        let permission = if action == String::from_str(env, "initialize") {
+            AdminPermission::Initialize
+        } else if action == String::from_str(env, "create_market") {
+            AdminPermission::CreateMarket
+        } else if action == String::from_str(env, "close_market") {
+            AdminPermission::CloseMarket
+        } else if action == String::from_str(env, "finalize_market") {
+            AdminPermission::FinalizeMarket
+        } else if action == String::from_str(env, "extend_market") {
+            AdminPermission::ExtendMarket
+        } else if action == String::from_str(env, "update_fees") {
+            AdminPermission::UpdateFees
+        } else if action == String::from_str(env, "update_config") {
+            AdminPermission::UpdateConfig
+        } else if action == String::from_str(env, "reset_config") {
+            AdminPermission::ResetConfig
+        } else if action == String::from_str(env, "collect_fees") {
+            AdminPermission::CollectFees
+        } else if action == String::from_str(env, "manage_disputes") {
+            AdminPermission::ManageDispute
+        } else if action == String::from_str(env, "view_analytics") {
+            AdminPermission::ViewAnalytic
+        } else if action == String::from_str(env, "emergency_actions") {
+            AdminPermission::Emergency
+        } else {
+            return Err(Error::InvalidInput);
+        };
+        Ok(AdminManager::validate_admin_permission(env, &admin, permission).is_ok())
+    }
+
+    /// Query the current multisig configuration.
+    pub fn query_multisig_config(env: &Env) -> Result<MultisigConfig, Error> {
+        let key = Symbol::new(env, "MultisigConfig");
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::ConfigNotFound)
+    }
+
+    /// Check if an action requires multisig approval.
+    pub fn query_requires_multisig(env: &Env, action: String) -> Result<bool, Error> {
+        let config = Self::query_multisig_config(env)?;
+        if !config.enabled {
+            return Ok(false);
+        }
+        // In the current implementation, most sensitive admin actions require multisig if enabled.
+        // This can be further refined based on specific action mapping.
+        Ok(true)
+    }
+
+    // ===== ORACLE QUERIES =====
+
+    /// Query metadata for a specific oracle.
+    pub fn query_oracle_metadata(env: &Env, oracle: Address) -> Result<OracleMetadata, Error> {
+        let key = crate::oracles::OracleWhitelistKey::OracleMetadata(oracle);
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::InvalidOracleConfig)
+    }
+
+    /// Query all approved oracle addresses.
+    pub fn query_approved_oracles(env: &Env) -> Result<Vec<Address>, Error> {
+        OracleWhitelist::get_approved_oracles(env)
+    }
+
+    // ===== DISPUTE QUERIES =====
+
+    /// Query statistics about disputes for a specific market.
+    pub fn query_dispute_stats(env: &Env, market_id: Symbol) -> Result<DisputeStats, Error> {
+        let key = Symbol::new(env, &alloc::format!("DisputeStats_{:?}", market_id));
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::MarketNotFound)
+    }
+
+    /// Query all disputes associated with a specific market.
+    pub fn query_market_disputes(env: &Env, market_id: Symbol) -> Result<Vec<Dispute>, Error> {
+        let key = crate::storage::DataKey::DisputeHistory(market_id);
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::MarketNotFound)
+    }
+
+    /// Query all votes cast on a specific dispute.
+    pub fn query_dispute_votes(env: &Env, dispute_id: Symbol) -> Result<Vec<DisputeVote>, Error> {
+        let key = Symbol::new(env, &alloc::format!("DisputeVotes_{:?}", dispute_id));
+        env.storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::InvalidInput)
+    }
+
+    // ===== GOVERNANCE QUERIES =====
+
+    /// Query all governance proposal IDs.
+    pub fn query_proposals(env: &Env) -> Result<Vec<Symbol>, Error> {
+        Ok(GovernanceContract::list_proposals(env.clone()))
+    }
+
+    /// Query detailed information about a specific governance proposal.
+    pub fn query_proposal_details(
+        env: &Env,
+        proposal_id: Symbol,
+    ) -> Result<GovernanceProposal, Error> {
+        GovernanceContract::get_proposal(env.clone(), proposal_id).map_err(|_| Error::InvalidInput)
+    }
+
     // ===== EVENT/MARKET QUERIES =====
 
     /// Query detailed information about a specific market.
@@ -85,6 +280,9 @@ impl QueryManager {
     /// ```
     pub fn query_event_details(env: &Env, market_id: Symbol) -> Result<EventDetailsQuery, Error> {
         let market = Self::get_market_from_storage(env, &market_id)?;
+        let created_at = EventManager::get_event(env, &market_id)
+            .map(|e| e.created_at)
+            .unwrap_or(0);
 
         // Calculate participant count
         let participant_count = market.votes.len() as u32;
@@ -95,12 +293,15 @@ impl QueryManager {
         // Get oracle provider name
         let oracle_provider = market.oracle_config.provider.name();
         let winning_outcome = market.get_winning_outcome();
+        let created_at = EventManager::get_event(env, &market_id)
+            .map(|e| e.created_at)
+            .unwrap_or(0);
 
         let response = EventDetailsQuery {
-            market_id,
+            market_id: market_id.clone(),
             question: market.question,
             outcomes: market.outcomes,
-            created_at: 0, // TODO: Retrieve from storage if available
+            created_at,
             end_time: market.end_time,
             status: MarketStatus::from_market_state(market.state),
             oracle_provider,
@@ -286,12 +487,17 @@ impl QueryManager {
         // Get dispute stake if any
         let dispute_stake = market.dispute_stakes.get(user.clone()).unwrap_or(0);
 
+        // Try to get bet data from specialized bet storage if available
+        let bet_opt = BetManager::get_bet(env, &market_id, &user);
+
+        let voted_at = bet_opt.map(|b| b.timestamp).unwrap_or(0);
+
         let response = UserBetQuery {
             user,
             market_id,
             outcome,
             stake_amount,
-            voted_at: 0, // TODO: Retrieve from vote timestamp if available
+            voted_at,
             is_winning,
             has_claimed,
             potential_payout,
@@ -531,13 +737,20 @@ impl QueryManager {
             }
         }
 
+        let platform_stats = StatisticsManager::get_platform_stats(env);
+
+        // Note: Counting unique users across all markets can be expensive.
+        // We use the active_user_count from DashboardStatistics as a proxy or
+        // would ideally have a dedicated counter.
+        let dashboard_stats = Self::get_dashboard_statistics(env)?;
+
         let response = ContractStateQuery {
             total_markets,
             active_markets,
             resolved_markets,
             total_value_locked,
-            total_fees_collected: 0i128, // TODO: Retrieve from fees module
-            unique_users: 0u32,          // TODO: Calculate from user index
+            total_fees_collected: platform_stats.total_fees_collected,
+            unique_users: dashboard_stats.active_user_count,
             contract_version: String::from_str(env, "1.0.0"),
             last_update: env.ledger().timestamp(),
         };
@@ -620,11 +833,18 @@ impl QueryManager {
     /// - User's stake proportion
     /// - Total winning stakes
     /// - Platform fee deduction
+    ///
+    /// # Overflow safety
+    ///
+    /// All intermediate products (`user_stake * total_staked`, `user_share * 2`)
+    /// are computed with [`crate::utils::ArithmeticUtils::checked_mul_div`] or
+    /// [`crate::utils::ArithmeticUtils::checked_mul`], returning
+    /// `Err(Error::Overflow)` instead of panicking or silently wrapping.
     pub(crate) fn calculate_payout(
         env: &Env,
         market: &Market,
         user_stake: i128,
-    ) -> Result<i128, Error> {
+    ) -> Result<i128, crate::errors::Error> {
         if user_stake <= 0 {
             return Ok(0);
         }
@@ -633,19 +853,37 @@ impl QueryManager {
         if let Some(winning_outcomes) = &market.winning_outcomes {
             let mut winning_total = 0i128;
             for outcome in winning_outcomes.iter() {
-                winning_total += Self::calculate_outcome_pool(env, market, &outcome)?;
+                let pool = Self::calculate_outcome_pool(env, market, &outcome)?;
+                // OVERFLOW SAFETY: accumulate pool with checked addition
+                winning_total = crate::utils::ArithmeticUtils::checked_accumulate(
+                    winning_total,
+                    pool,
+                )
+                .map_err(|_| crate::errors::Error::Overflow)?;
             }
 
             if winning_total <= 0 {
                 return Ok(0);
             }
 
-            // Calculate user's share: (user_stake / winning_total) * total_pool
-            let user_share = (user_stake * market.total_staked) / winning_total;
+            // OVERFLOW SAFETY: user_stake * total_staked / winning_total
+            let user_share = crate::utils::ArithmeticUtils::checked_mul_div(
+                user_stake,
+                market.total_staked,
+                winning_total,
+            )
+            .map_err(|_| crate::errors::Error::Overflow)?;
 
-            // Deduct platform fee (2%)
-            let fee_amount = (user_share * 2) / 100;
-            let payout = user_share - fee_amount;
+            // Deduct platform fee (2%): fee = user_share * 2 / 100
+            let fee_amount = crate::utils::ArithmeticUtils::checked_mul_div(
+                user_share,
+                2,
+                100,
+            )
+            .map_err(|_| crate::errors::Error::Overflow)?;
+            let payout = user_share
+                .checked_sub(fee_amount)
+                .ok_or(crate::errors::Error::Overflow)?;
 
             Ok(payout.max(0))
         } else {
@@ -656,18 +894,26 @@ impl QueryManager {
     /// Calculate total stake for a specific outcome.
     ///
     /// Sums all user stakes that voted for the given outcome.
+    ///
+    /// # Overflow safety
+    ///
+    /// The running sum uses [`crate::utils::ArithmeticUtils::checked_accumulate`]
+    /// so a market with many large stakes cannot silently wrap the total.  The
+    /// error is propagated to the caller as `Err(Error::Overflow)`.
     pub(crate) fn calculate_outcome_pool(
         env: &Env,
         market: &Market,
         outcome: &String,
-    ) -> Result<i128, Error> {
+    ) -> Result<i128, crate::errors::Error> {
         let mut pool = 0i128;
 
         // Iterate through all votes to find matching outcome
         for (user, voted_outcome) in market.votes.iter() {
             if voted_outcome == *outcome {
                 if let Some(stake) = market.stakes.get(user) {
-                    pool += stake;
+                    // OVERFLOW SAFETY: accumulate stake with checked addition
+                    pool = crate::utils::ArithmeticUtils::checked_accumulate(pool, stake)
+                        .map_err(|_| crate::errors::Error::Overflow)?;
                 }
             }
         }
@@ -679,10 +925,16 @@ impl QueryManager {
     ///
     /// Uses stake distribution to infer market's probability estimates
     /// for "yes" and "no" outcomes. Returns percentages (0-100).
+    ///
+    /// # Overflow safety
+    ///
+    /// `pool1 + pool2` and the `pool * 100` products are guarded with checked
+    /// arithmetic.  On overflow both probabilities default to 50 so the caller
+    /// always receives a valid result.
     pub(crate) fn calculate_implied_probabilities(
         env: &Env,
         market: &Market,
-    ) -> Result<(u32, u32), Error> {
+    ) -> Result<(u32, u32), crate::errors::Error> {
         if market.outcomes.len() < 2 {
             return Ok((50, 50)); // Default if insufficient outcomes
         }
@@ -694,13 +946,18 @@ impl QueryManager {
         let pool1 = Self::calculate_outcome_pool(env, market, &outcome1)?;
         let pool2 = Self::calculate_outcome_pool(env, market, &outcome2)?;
 
-        let total = pool1 + pool2;
+        // OVERFLOW SAFETY: pool1 + pool2 may overflow for extreme values
+        let total = crate::utils::ArithmeticUtils::checked_add(pool1, pool2)
+            .unwrap_or(0);
         if total <= 0 {
             return Ok((50, 50));
         }
 
-        let prob1 = ((pool2 * 100) / total) as u32; // Inverse: more stake on outcome1 = lower prob
-        let prob2 = ((pool1 * 100) / total) as u32;
+        // OVERFLOW SAFETY: pool * 100 uses checked_mul_div
+        let prob1 = crate::utils::ArithmeticUtils::checked_mul_div(pool2, 100, total)
+            .unwrap_or(50) as u32; // Inverse: more stake on outcome1 = lower prob
+        let prob2 = crate::utils::ArithmeticUtils::checked_mul_div(pool1, 100, total)
+            .unwrap_or(50) as u32;
 
         Ok((prob1, prob2))
     }
@@ -883,13 +1140,7 @@ impl QueryManager {
         limit: u32,
     ) -> Result<Vec<UserLeaderboardEntryV1>, Error> {
         let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
-        use crate::statistics::StatisticsManager;
-
-        // Note: This function would require iterating through all users.
-        // In a production system, this should be optimized with an index.
-        // For now, return empty as full implementation requires user index.
-        // This is documented as a known limitation.
-        Ok(soroban_sdk::vec![env])
+        Ok(crate::leaderboard::LeaderboardHeap::top_by_winnings(env, limit))
     }
 
     /// Get top users by win rate (leaderboard)
@@ -914,13 +1165,10 @@ impl QueryManager {
     pub fn get_top_users_by_win_rate(
         env: &Env,
         limit: u32,
-        min_bets: u64,
+        _min_bets: u64,
     ) -> Result<Vec<UserLeaderboardEntryV1>, Error> {
         let limit = core::cmp::min(limit, MAX_PAGE_SIZE);
-
-        // Note: Similar implementation note as get_top_users_by_winnings
-        // This requires user index for efficiency
-        Ok(soroban_sdk::vec![env])
+        Ok(crate::leaderboard::LeaderboardHeap::top_by_win_rate(env, limit))
     }
 
     /// Get category statistics for filtered views

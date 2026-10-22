@@ -3,6 +3,17 @@
 /// This module defines maximum length constraints for strings and vectors used throughout
 /// the Predictify Hybrid smart contract. These limits serve multiple purposes:
 ///
+/// # Length semantics (Unicode scalar values, not UTF-8 bytes)
+///
+/// All string limits in this module are enforced on **Unicode scalar value count** (the same
+/// notion as Rust's [`str::chars`]), **not** on [`String::len`] byte length. For example,
+/// `"😀"` counts as **one** character toward the limit even though it occupies four UTF-8 bytes.
+/// This matches the documented "N characters" limits and aligns with
+/// [`crate::validation::CreationValidator`], which also counts `.chars()`.
+///
+/// Invalid UTF-8 and strings containing Unicode control characters (`char::is_control`) are
+/// rejected with [`crate::Error::InvalidInput`].
+///
 /// # Security Benefits
 ///
 /// - **DoS Prevention**: Prevents attackers from creating markets with excessively large metadata
@@ -26,6 +37,22 @@
 /// validate_question_length(&question)?; // Returns Ok if within limits
 /// ```
 use soroban_sdk::{String, Vec};
+
+// ===== CATEGORY / TAG LIMITS (canonical: `config`) =====
+//
+// These re-exports keep a single source of truth in `config` while preserving the
+// `metadata_limits` API for integrators and audit review.
+
+/// Maximum length of a market category name (from [`crate::config::MAX_CATEGORY_LENGTH`]).
+pub const MAX_CATEGORY_LENGTH: u32 = crate::config::MAX_CATEGORY_LENGTH;
+/// Minimum length of a market category when set (from [`crate::config::MIN_CATEGORY_LENGTH`]).
+pub const MIN_CATEGORY_LENGTH: u32 = crate::config::MIN_CATEGORY_LENGTH;
+/// Maximum length of a single tag (from [`crate::config::MAX_TAG_LENGTH`]).
+pub const MAX_TAG_LENGTH: u32 = crate::config::MAX_TAG_LENGTH;
+/// Minimum length of a single non-empty tag (from [`crate::config::MIN_TAG_LENGTH`]).
+pub const MIN_TAG_LENGTH: u32 = crate::config::MIN_TAG_LENGTH;
+/// Maximum number of tags per market (from [`crate::config::MAX_TAGS_PER_MARKET`]).
+pub const MAX_TAGS_COUNT: u32 = crate::config::MAX_TAGS_PER_MARKET;
 
 // ===== STRING LENGTH LIMITS =====
 
@@ -52,18 +79,6 @@ pub const MAX_FEED_ID_LENGTH: u32 = 200;
 /// Rationale: Valid operators are "gt", "lt", "eq" (2-3 chars). 10 chars allows
 /// for future operators like "gte", "lte", "between" while preventing abuse.
 pub const MAX_COMPARISON_LENGTH: u32 = 10;
-
-/// Maximum length for category strings (50 characters)
-///
-/// Rationale: Categories like "sports", "crypto", "politics" are typically short.
-/// 50 chars allows for descriptive categories like "cryptocurrency-price-predictions".
-pub const MAX_CATEGORY_LENGTH: u32 = 50;
-
-/// Maximum length for individual tag strings (30 characters)
-///
-/// Rationale: Tags should be concise keywords. 30 chars accommodates tags like
-/// "bitcoin", "price-prediction", "short-term" while preventing abuse.
-pub const MAX_TAG_LENGTH: u32 = 30;
 
 /// Maximum length for extension reason text (300 characters)
 ///
@@ -98,12 +113,6 @@ pub const MAX_SIGNATURE_LENGTH: u32 = 500;
 /// need more than 5-10 options. 20 provides flexibility while preventing abuse.
 pub const MAX_OUTCOMES_COUNT: u32 = 20;
 
-/// Maximum number of tags per market (10 tags)
-///
-/// Rationale: Tags are for categorization and filtering. 10 tags is generous for
-/// most use cases (e.g., "bitcoin", "crypto", "price", "short-term", "volatile").
-pub const MAX_TAGS_COUNT: u32 = 10;
-
 /// Maximum number of extension history entries (50 extensions)
 ///
 /// Rationale: Markets should not be extended indefinitely. 50 extensions is
@@ -124,74 +133,67 @@ pub const MAX_WINNING_OUTCOMES_COUNT: u32 = 10;
 
 // ===== VALIDATION FUNCTIONS =====
 
+fn scan_metadata_text(value: &String) -> Result<(u32, bool), crate::Error> {
+    let byte_len = value.len() as usize;
+    if byte_len == 0 {
+        return Ok((0, false));
+    }
+    let mut bytes = alloc::vec![0u8; byte_len];
+    value.copy_into_slice(&mut bytes);
+    let text = core::str::from_utf8(&bytes).map_err(|_| crate::Error::InvalidInput)?;
+    let mut char_count = 0u32;
+    let mut has_control = false;
+    for c in text.chars() {
+        char_count = char_count.saturating_add(1);
+        if c.is_control() {
+            has_control = true;
+        }
+    }
+    Ok((char_count, has_control))
+}
+
+fn reject_control_characters(value: &String) -> Result<(), crate::Error> {
+    let (_, has_control) = scan_metadata_text(value)?;
+    if has_control {
+        return Err(crate::Error::InvalidInput);
+    }
+    Ok(())
+}
+
 /// Validates that a question string is within the maximum allowed length.
 ///
-/// # Arguments
-///
-/// * `question` - The market question to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if the question length is valid
-/// * `Err(Error::QuestionTooLong)` if the question exceeds MAX_QUESTION_LENGTH
-///
-/// # Example
-///
-/// ```rust
-/// let question = String::from_str(&env, "Will BTC reach $100k?");
-/// validate_question_length(&question)?;
-/// ```
+/// Limits are measured in Unicode scalar values, not UTF-8 bytes.
 pub fn validate_question_length(question: &String) -> Result<(), crate::Error> {
-    if question.len() > MAX_QUESTION_LENGTH {
+    let (len, has_control) = scan_metadata_text(question)?;
+    if has_control {
+        return Err(crate::Error::InvalidInput);
+    }
+    if len > MAX_QUESTION_LENGTH {
         return Err(crate::Error::QuestionTooLong);
     }
     Ok(())
 }
 
 /// Validates that an outcome string is within the maximum allowed length.
-///
-/// # Arguments
-///
-/// * `outcome` - The outcome label to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if the outcome length is valid
-/// * `Err(Error::OutcomeTooLong)` if the outcome exceeds MAX_OUTCOME_LENGTH
 pub fn validate_outcome_length(outcome: &String) -> Result<(), crate::Error> {
-    if outcome.len() > MAX_OUTCOME_LENGTH {
+    let (len, has_control) = scan_metadata_text(outcome)?;
+    if has_control {
+        return Err(crate::Error::InvalidInput);
+    }
+    if len > MAX_OUTCOME_LENGTH {
         return Err(crate::Error::OutcomeTooLong);
     }
     Ok(())
 }
 
-/// Validates that all outcomes in a vector are within the maximum allowed length.
-///
-/// # Arguments
-///
-/// * `outcomes` - Vector of outcome labels to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if all outcomes are valid length
-/// * `Err(Error::OutcomeTooLong)` if any outcome exceeds MAX_OUTCOME_LENGTH
 pub fn validate_outcomes_length(outcomes: &Vec<String>) -> Result<(), crate::Error> {
     for i in 0..outcomes.len() {
-        validate_outcome_length(&outcomes.get(i).unwrap())?;
+        let outcome = outcomes.get(i).ok_or(crate::Error::InvalidInput)?;
+        validate_outcome_length(&outcome)?;
     }
     Ok(())
 }
 
-/// Validates that the number of outcomes is within the maximum allowed count.
-///
-/// # Arguments
-///
-/// * `outcomes` - Vector of outcomes to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if the count is valid
-/// * `Err(Error::TooManyOutcomes)` if the count exceeds MAX_OUTCOMES_COUNT
 pub fn validate_outcomes_count(outcomes: &Vec<String>) -> Result<(), crate::Error> {
     if outcomes.len() > MAX_OUTCOMES_COUNT {
         return Err(crate::Error::TooManyOutcomes);
@@ -199,101 +201,89 @@ pub fn validate_outcomes_count(outcomes: &Vec<String>) -> Result<(), crate::Erro
     Ok(())
 }
 
-/// Validates that a feed ID string is within the maximum allowed length.
-///
-/// # Arguments
-///
-/// * `feed_id` - The oracle feed ID to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if the feed ID length is valid
-/// * `Err(Error::FeedIdTooLong)` if the feed ID exceeds MAX_FEED_ID_LENGTH
 pub fn validate_feed_id_length(feed_id: &String) -> Result<(), crate::Error> {
-    if feed_id.len() > MAX_FEED_ID_LENGTH {
+    reject_control_characters(feed_id)?;
+    let (len, _) = scan_metadata_text(feed_id)?;
+    if len > MAX_FEED_ID_LENGTH {
         return Err(crate::Error::FeedIdTooLong);
     }
     Ok(())
 }
 
-/// Validates that a comparison operator string is within the maximum allowed length.
-///
-/// # Arguments
-///
-/// * `comparison` - The comparison operator to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if the comparison length is valid
-/// * `Err(Error::ComparisonTooLong)` if the comparison exceeds MAX_COMPARISON_LENGTH
 pub fn validate_comparison_length(comparison: &String) -> Result<(), crate::Error> {
-    if comparison.len() > MAX_COMPARISON_LENGTH {
+    reject_control_characters(comparison)?;
+    let (len, _) = scan_metadata_text(comparison)?;
+    if len > MAX_COMPARISON_LENGTH {
         return Err(crate::Error::ComparisonTooLong);
     }
     Ok(())
 }
 
-/// Validates that a category string is within the maximum allowed length.
-///
-/// # Arguments
-///
-/// * `category` - The category string to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if the category length is valid
-/// * `Err(Error::CategoryTooLong)` if the category exceeds MAX_CATEGORY_LENGTH
 pub fn validate_category_length(category: &String) -> Result<(), crate::Error> {
-    if category.len() > MAX_CATEGORY_LENGTH {
+    reject_control_characters(category)?;
+    let (len, _) = scan_metadata_text(category)?;
+    if len > MAX_CATEGORY_LENGTH {
         return Err(crate::Error::CategoryTooLong);
     }
     Ok(())
 }
 
-/// Validates that a tag string is within the maximum allowed length.
-///
-/// # Arguments
-///
-/// * `tag` - The tag string to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if the tag length is valid
-/// * `Err(Error::TagTooLong)` if the tag exceeds MAX_TAG_LENGTH
+pub fn validate_category_metadata(category: &String) -> Result<(), crate::Error> {
+    let (len, has_control) = scan_metadata_text(category)?;
+    if has_control {
+        return Err(crate::Error::InvalidInput);
+    }
+    if len < MIN_CATEGORY_LENGTH {
+        return Err(crate::Error::CategoryTooShort);
+    }
+    if len > MAX_CATEGORY_LENGTH {
+        return Err(crate::Error::CategoryTooLong);
+    }
+    Ok(())
+}
+
+pub fn validate_option_category_metadata(opt: &Option<String>) -> Result<(), crate::Error> {
+    match opt {
+        None => Ok(()),
+        Some(s) if s.is_empty() => Err(crate::Error::InvalidInput),
+        Some(s) => validate_category_metadata(s),
+    }
+}
+
 pub fn validate_tag_length(tag: &String) -> Result<(), crate::Error> {
-    if tag.len() > MAX_TAG_LENGTH {
+    reject_control_characters(tag)?;
+    let (len, _) = scan_metadata_text(tag)?;
+    if len > MAX_TAG_LENGTH {
         return Err(crate::Error::TagTooLong);
     }
     Ok(())
 }
 
-/// Validates that all tags in a vector are within the maximum allowed length.
-///
-/// # Arguments
-///
-/// * `tags` - Vector of tags to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if all tags are valid length
-/// * `Err(Error::TagTooLong)` if any tag exceeds MAX_TAG_LENGTH
-pub fn validate_tags_length(tags: &Vec<String>) -> Result<(), crate::Error> {
-    for i in 0..tags.len() {
-        validate_tag_length(&tags.get(i).unwrap())?;
+pub fn validate_tag_metadata(tag: &String) -> Result<(), crate::Error> {
+    let (len, has_control) = scan_metadata_text(tag)?;
+    if has_control {
+        return Err(crate::Error::InvalidInput);
+    }
+    if len == 0 {
+        return Err(crate::Error::InvalidInput);
+    }
+    if len < MIN_TAG_LENGTH {
+        return Err(crate::Error::TagTooShort);
+    }
+    if len > MAX_TAG_LENGTH {
+        return Err(crate::Error::TagTooLong);
     }
     Ok(())
 }
 
-/// Validates that the number of tags is within the maximum allowed count.
-///
-/// # Arguments
-///
-/// * `tags` - Vector of tags to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if the count is valid
-/// * `Err(Error::TooManyTags)` if the count exceeds MAX_TAGS_COUNT
+pub fn validate_tags_length(tags: &Vec<String>) -> Result<(), crate::Error> {
+    for i in 0..tags.len() {
+        let tag = tags.get(i).ok_or(crate::Error::InvalidInput)?;
+        validate_tag_length(&tag)?;
+    }
+    Ok(())
+}
+
 pub fn validate_tags_count(tags: &Vec<String>) -> Result<(), crate::Error> {
     if tags.len() > MAX_TAGS_COUNT {
         return Err(crate::Error::TooManyTags);
@@ -301,69 +291,55 @@ pub fn validate_tags_count(tags: &Vec<String>) -> Result<(), crate::Error> {
     Ok(())
 }
 
-/// Validates that an extension reason string is within the maximum allowed length.
-///
-/// # Arguments
-///
-/// * `reason` - The extension reason to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if the reason length is valid
-/// * `Err(Error::ExtensionReasonTooLong)` if the reason exceeds MAX_EXTENSION_REASON_LENGTH
+pub fn validate_event_tags(tags: &Vec<String>) -> Result<(), crate::Error> {
+    validate_tags_count(tags)?;
+    for i in 0..tags.len() {
+        let tag = tags.get(i).ok_or(crate::Error::InvalidInput)?;
+        validate_tag_metadata(&tag)?;
+    }
+    for i in 0..tags.len() {
+        let left = tags.get(i).ok_or(crate::Error::InvalidInput)?;
+        for j in (i + 1)..tags.len() {
+            let right = tags.get(j).ok_or(crate::Error::InvalidInput)?;
+            if left == right {
+                return Err(crate::Error::InvalidInput);
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn validate_extension_reason_length(reason: &String) -> Result<(), crate::Error> {
-    if reason.len() > MAX_EXTENSION_REASON_LENGTH {
+    reject_control_characters(reason)?;
+    let (len, _) = scan_metadata_text(reason)?;
+    if len > MAX_EXTENSION_REASON_LENGTH {
         return Err(crate::Error::ExtensionReasonTooLong);
     }
     Ok(())
 }
 
-/// Validates that a source identifier string is within the maximum allowed length.
-///
-/// # Arguments
-///
-/// * `source` - The source identifier to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if the source length is valid
-/// * `Err(Error::SourceTooLong)` if the source exceeds MAX_SOURCE_LENGTH
 pub fn validate_source_length(source: &String) -> Result<(), crate::Error> {
-    if source.len() > MAX_SOURCE_LENGTH {
+    reject_control_characters(source)?;
+    let (len, _) = scan_metadata_text(source)?;
+    if len > MAX_SOURCE_LENGTH {
         return Err(crate::Error::SourceTooLong);
     }
     Ok(())
 }
 
-/// Validates that an error message string is within the maximum allowed length.
-///
-/// # Arguments
-///
-/// * `error_message` - The error message to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if the error message length is valid
-/// * `Err(Error::ErrorMessageTooLong)` if the message exceeds MAX_ERROR_MESSAGE_LENGTH
 pub fn validate_error_message_length(error_message: &String) -> Result<(), crate::Error> {
-    if error_message.len() > MAX_ERROR_MESSAGE_LENGTH {
+    reject_control_characters(error_message)?;
+    let (len, _) = scan_metadata_text(error_message)?;
+    if len > MAX_ERROR_MESSAGE_LENGTH {
         return Err(crate::Error::ErrorMessageTooLong);
     }
     Ok(())
 }
 
-/// Validates that a signature string is within the maximum allowed length.
-///
-/// # Arguments
-///
-/// * `signature` - The signature string to validate
-///
-/// # Returns
-///
-/// * `Ok(())` if the signature length is valid
-/// * `Err(Error::SignatureTooLong)` if the signature exceeds MAX_SIGNATURE_LENGTH
 pub fn validate_signature_length(signature: &String) -> Result<(), crate::Error> {
-    if signature.len() > MAX_SIGNATURE_LENGTH {
+    reject_control_characters(signature)?;
+    let (len, _) = scan_metadata_text(signature)?;
+    if len > MAX_SIGNATURE_LENGTH {
         return Err(crate::Error::SignatureTooLong);
     }
     Ok(())

@@ -1,6 +1,6 @@
 use soroban_sdk::{contracttype, symbol_short, vec, Address, Env, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::err::Error;
 use crate::types::*;
 
 /// Market extension management system for Predictify Hybrid contract
@@ -11,6 +11,7 @@ use crate::types::*;
 /// - Extension events and logging
 /// - Extension history tracking
 /// - Extension analytics and reporting
+/// - Per-market cumulative extension cap with audit event on cap hit
 
 // ===== EXTENSION CONSTANTS =====
 // Note: These constants are now managed by the config module
@@ -20,6 +21,11 @@ const MAX_EXTENSION_DAYS: u32 = crate::config::MAX_EXTENSION_DAYS;
 const MIN_EXTENSION_DAYS: u32 = crate::config::MIN_EXTENSION_DAYS;
 const EXTENSION_FEE_PER_DAY: i128 = crate::config::EXTENSION_FEE_PER_DAY; // 1 XLM per day in stroops
 const MAX_TOTAL_EXTENSIONS: u32 = crate::config::MAX_TOTAL_EXTENSIONS;
+
+/// Storage key for the admin-configurable cumulative extension cap (in days).
+/// Stored under `Symbol::new(env, "cum_ext_cap")` in persistent storage.
+/// Defaults to 0 (no cap) when absent.
+const CUMULATIVE_CAP_KEY: &str = "cum_ext_cap";
 
 // ===== EXTENSION MANAGEMENT =====
 
@@ -192,8 +198,11 @@ impl ExtensionManager {
         // Validate extension conditions
         ExtensionValidator::validate_extension_conditions(env, &market_id, additional_days)?;
 
-        // Check extension limits
+        // Check per-call extension limits
         ExtensionValidator::check_extension_limits(env, &market_id, additional_days)?;
+
+        // Check cumulative extension cap for this market
+        ExtensionValidator::check_cumulative_cap(env, &market_id, additional_days)?;
 
         // Verify admin permissions
         ExtensionValidator::can_extend_market(env, &market_id, &admin)?;
@@ -215,6 +224,9 @@ impl ExtensionManager {
 
         // Store updated market
         MarketStateManager::update_market(env, &market_id, &market);
+
+        // Update the cumulative extension total for this market
+        ExtensionUtils::increment_extension_total(env, &market_id, additional_days);
 
         // Emit extension event
         ExtensionUtils::emit_extension_event(env, &market_id, additional_days, &admin);
@@ -566,24 +578,55 @@ impl ExtensionValidator {
         additional_days: u32,
     ) -> Result<(), Error> {
         // Validate additional days
-        if additional_days < MIN_EXTENSION_DAYS {
-            return Err(Error::InvalidInput);
+        if additional_days == 0 {
+            return Err(Error::InvalidDuration);
         }
 
         if additional_days > MAX_EXTENSION_DAYS {
-            return Err(Error::InvalidInput);
+            return Err(Error::InvalidDuration);
         }
 
-        // Get market and validate state
+        // Get market and validate state.
+        // Extension is only permitted while the market is Active. Any terminal
+        // or post-resolution state (Resolved, Closed, Cancelled, Ended) must be
+        // rejected to prevent lifecycle corruption.
         let market = MarketStateManager::get_market(env, market_id)?;
 
-        // Check if market is still active
-        let current_time = env.ledger().timestamp();
-        if current_time >= market.end_time {
-            return Err(Error::MarketClosed);
+        match market.state {
+            MarketState::Resolved | MarketState::Closed | MarketState::Cancelled => {
+                return Err(Error::ExtensionDenied);
+            }
+            MarketState::Ended => {
+                return Err(Error::ExtensionDenied);
+            }
+            MarketState::Active => {}
+            MarketState::Disputed => {
+                return Err(Error::ExtensionDenied);
+            }
+            // Archived/Restored are immutable terminals under the metadata-only
+            // archive model; extension is never permitted on them.
+            MarketState::Archived | MarketState::Restored => {
+                return Err(Error::ExtensionDenied);
+            }
         }
 
-        // Check if market is already resolved
+        let current_time = env.ledger().timestamp();
+
+        // Reject if the market has already passed its end time.
+        if current_time >= market.end_time {
+            return Err(Error::ExtensionDenied);
+        }
+
+        // Reject if the resulting deadline would still be in the past or present.
+        // This guards against edge cases where end_time is very close to now.
+        let new_end_time = market
+            .end_time
+            .saturating_add((additional_days as u64) * 24 * 60 * 60);
+        if new_end_time <= current_time {
+            return Err(Error::ExtensionDenied);
+        }
+
+        // Reject if oracle has already produced a result (market is effectively resolved).
         if market.oracle_result.is_some() {
             return Err(Error::MarketResolved);
         }
@@ -600,13 +643,17 @@ impl ExtensionValidator {
         let market = MarketStateManager::get_market(env, market_id)?;
 
         // Check total extension days limit
-        if market.total_extension_days + additional_days > market.max_extension_days {
-            return Err(Error::InvalidInput);
+        let new_total_extension_days = market
+            .total_extension_days
+            .checked_add(additional_days)
+            .ok_or(Error::InvalidDuration)?;
+        if new_total_extension_days > market.max_extension_days {
+            return Err(Error::InvalidDuration);
         }
 
         // Check number of extensions limit
-        if (market.extension_history.len() as usize) >= (MAX_TOTAL_EXTENSIONS as usize) {
-            return Err(Error::InvalidInput);
+        if market.extension_history.len() >= MAX_TOTAL_EXTENSIONS {
+            return Err(Error::InvalidDuration);
         }
 
         Ok(())
@@ -617,8 +664,55 @@ impl ExtensionValidator {
         let market = MarketStateManager::get_market(env, market_id)?;
 
         // Check if caller is market admin
-        if market.admin != *admin {
+        if market.admin != admin.clone() {
             return Err(Error::Unauthorized);
+        }
+
+        Ok(())
+    }
+
+    /// Check cumulative extension cap.
+    ///
+    /// Reads the admin-configured cap (days) stored under `CUMULATIVE_CAP_KEY`.
+    /// A cap value of `0` means no cumulative cap is enforced.
+    /// When the cap is set, the proposed extension is checked against the
+    /// running total stored under `DataKey::MarketExtensionTotal(market_id)`.
+    /// On rejection an audit event is emitted before returning the error.
+    pub fn check_cumulative_cap(
+        env: &Env,
+        market_id: &Symbol,
+        additional_days: u32,
+    ) -> Result<(), Error> {
+        let cap_key = Symbol::new(env, CUMULATIVE_CAP_KEY);
+        let cap: u32 = env
+            .storage()
+            .persistent()
+            .get(&cap_key)
+            .unwrap_or(0u32);
+
+        // 0 means no cap configured — skip check
+        if cap == 0 {
+            return Ok(());
+        }
+
+        let total_key = crate::storage::DataKey::MarketExtensionTotal(market_id.clone());
+        let current_total: u32 = env
+            .storage()
+            .persistent()
+            .get(&total_key)
+            .unwrap_or(0u32);
+
+        let new_total = current_total
+            .checked_add(additional_days)
+            .ok_or(Error::CumulativeExtensionCapHit)?;
+
+        if new_total > cap {
+            // Emit audit event before returning the error
+            env.events().publish(
+                (symbol_short!("cum_cap"), market_id.clone()),
+                (current_total, cap),
+            );
+            return Err(Error::CumulativeExtensionCapHit);
         }
 
         Ok(())
@@ -631,6 +725,15 @@ impl ExtensionValidator {
 pub struct ExtensionUtils;
 
 impl ExtensionUtils {
+    /// Increment the persistent cumulative extension total for a market.
+    /// Called after a successful extension so the counter is monotone-increasing.
+    pub fn increment_extension_total(env: &Env, market_id: &Symbol, additional_days: u32) {
+        let key = crate::storage::DataKey::MarketExtensionTotal(market_id.clone());
+        let current: u32 = env.storage().persistent().get(&key).unwrap_or(0u32);
+        let new_total = current.saturating_add(additional_days);
+        env.storage().persistent().set(&key, &new_total);
+    }
+
     /// Handle extension fees
     pub fn handle_extension_fees(
         env: &Env,
@@ -761,14 +864,14 @@ mod tests {
             assert_eq!(
                 ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 0)
                     .unwrap_err(),
-                Error::InvalidInput
+                Error::InvalidDuration
             );
         });
 
         assert_eq!(
             ExtensionValidator::validate_extension_conditions(&env, &symbol_short!("test"), 31)
                 .unwrap_err(),
-            Error::InvalidInput
+            Error::InvalidDuration
         );
     }
 

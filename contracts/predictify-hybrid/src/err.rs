@@ -22,6 +22,12 @@ use soroban_sdk::{contracterror, contracttype, Address, Env, Map, String, Symbol
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
+    IdempotentBatchAlreadyApplied = 660,
+    /// Reason table has reached its maximum capacity of 256 entries.
+    ReasonTableFull = 670,
+    Overflow = 672,
+    MaxBetCapExceeded = 673,
+    InvalidCap = 674,
     // ===== USER OPERATION ERRORS (100-112) =====
     /// User is not authorized to perform the requested action. Typically returned when
     /// a non-admin attempts to call admin-only functions.
@@ -52,6 +58,19 @@ pub enum Error {
     BetsAlreadyPlaced = 111,
     /// The user's balance is insufficient for the requested operation.
     InsufficientBalance = 112,
+    /// The provided claim nonce does not match the expected nonce for replay protection.
+    /// Each claim must include the correct nonce to prevent transaction replays.
+    InvalidNonce = 113,
+    /// Bet amount exceeds the effective maximum allowed for the market.
+    BetAboveMaximum = 114,
+    /// Bet amount is below the per-market minimum threshold.
+    BetBelowMarketMin = 115,
+    /// Per-market bet limits are inverted (min > max).
+    BetLimitsInverted = 116,
+    /// Per-market bet limit exceeds the absolute maximum.
+    BetLimitAboveMaximum = 117,
+    /// Per-market max single-bet cap is out of range (zero, negative, or above absolute max).
+    BetCapOutOfRange = 118,
 
     // ===== ORACLE ERRORS =====
     /// The oracle service is unavailable. External data source may be temporarily
@@ -119,8 +138,17 @@ pub enum Error {
     DisputeCondNotMet = 408,
     /// Fee distribution for dispute resolution failed. Check balances and permissions.
     DisputeFeeFailed = 409,
+    /// Initialization parameters must be validated atomically. If any parameter
+    /// is invalid, the entire initialization is rejected and no state is changed.
+    InvalidInitializationParams = 700,
     /// Generic dispute subsystem error. Check dispute state and configuration.
     DisputeError = 410,
+    /// The dispute opener cannot vote on their own dispute.
+    DisputerCannotVote = 438,
+    /// Unclaimed winnings have already been swept for this market. Repeat sweeps are not allowed.
+    SweepAlreadyDone = 411,
+    /// Fee arithmetic overflowed during checked platform-fee calculation.
+    FeeArithmeticOverflow = 412,
     /// Platform fee has already been collected from this market.
     FeeAlreadyCollected = 413,
     /// No fees are available to collect from this market.
@@ -133,6 +161,17 @@ pub enum Error {
     GasBudgetExceeded = 417,
     /// Admin address has not been set. Contract initialization is incomplete.
     AdminNotSet = 418,
+    /// Asset decimals mismatch. Stored decimals differ from the live SAC decimals.
+    /// This prevents silently inflated or deflated stakes via normalize_amount.
+    AssetDecimalsMismatch = 439,
+    /// A per-market admin action was attempted before the configured timelock period elapsed.
+    AdminActionTimelocked = 443,
+    /// The operation would exceed the remaining CPU instruction budget.
+    /// This is a pre-emptive guard that aborts before the host runs out of resources.
+    ///
+    /// Discriminant 444: AdminNotSet was pinned at 418 in the stability test so
+    /// OperationWouldExceedBudget is placed after the frozen metadata range.
+    OperationWouldExceedBudget = 444,
 
     // ===== METADATA LENGTH LIMIT ERRORS (420-434) =====
     /// Market question exceeds maximum allowed length.
@@ -165,8 +204,34 @@ pub enum Error {
     TooManyOracleResults = 433,
     /// Too many winning outcomes specified.
     TooManyWinningOutcomes = 434,
+    /// Force-resolve idempotency key has already been used for this market.
+    ///
+    /// The same `(market_id, idempotency_key)` pair was already consumed by a
+    /// previous `force_resolve_market` call. The operation is safe to treat as
+    /// a no-op; no resolution was re-applied.
+    ForceResolveAlreadyUsed = 435,
+    /// The event archive has reached its maximum capacity. Prune old entries before archiving more.
+    ArchiveFull = 440,
+    /// Category string is shorter than the minimum allowed length (when a category is set).
+    CategoryTooShort = 436,
+    /// Tag string is shorter than the minimum allowed length (non-empty tags only).
+    TagTooShort = 437,
 
-    // ===== CIRCUIT BREAKER ERRORS ====="
+    // ===== VALIDATION ERRORS (435-437) =====
+    /// Market ID already exists in the registry. Cannot create duplicate market IDs.
+    DuplicateMarketId = 441,
+    /// Market cannot be archived from current state. Archive only allowed from Resolved or Cancelled.
+    CannotArchiveFromState = 442,
+    /// Market cannot be restored from current state. Restore only allowed from Archived.
+    CannotRestoreFromState = 447,
+    /// Market is already archived. Cannot perform modification operations on archived markets.
+    MarketAlreadyArchived = 445,
+    /// Market is already restored. Cannot restore a market that is not archived.
+    MarketAlreadyRestored = 446,
+    // `ReplayedOverride` is defined once below (= 526); the duplicate that lived
+    // here (= 442) was removed to fix E0428.
+
+    // ===== CIRCUIT BREAKER ERRORS =====
     /// Circuit breaker has not been initialized. Initialize before use.
     CBNotInitialized = 500,
     /// Circuit breaker is already open (active). Cannot open again.
@@ -177,6 +242,89 @@ pub enum Error {
     CBOpen = 503,
     /// Generic circuit breaker subsystem error. Check configuration and state.
     CBError = 504,
+    /// Rate limit exceeded. Too many requests in the time window.
+    RateLimitExceeded = 505,
+    /// Cumulative extension cap reached; no further extensions allowed for this market.
+    CumulativeExtensionCapHit = 506,
+    /// A market state transition was attempted that is not permitted by the state machine.
+    ///
+    /// This error is returned by `MarketStateLogic::validate_state_transition` whenever the
+    /// requested `(from, to)` pair is not in the set of legal edges.  Callers should treat
+    /// this as a terminal error — the transition will never succeed without first moving the
+    /// market through intermediate states that are part of the legal path.
+    ///
+    /// # Examples of illegal transitions
+    ///
+    /// * `Resolved → Active`  (cannot reopen a resolved market)
+    /// * `Closed → Ended`     (terminal state, no transitions allowed)
+    /// * `Active → Active`    (self-loops are not valid transitions)
+    IllegalMarketStateTransition = 507,
+    /// The effective fee (in basis points) exceeds the maximum the caller is willing to accept.
+    /// The bet is rejected to protect the caller from unexpected fee changes.
+    FeeExceedsMax = 508,
+    /// Force-resolve idempotency key has already been used. Use a new unique key.
+    ForceResolveReplayed = 517,
+    /// Force-resolve reason is empty. Every force-resolve must be justified.
+    ForceResolveReasonEmpty = 518,
+    /// No pending fee config commit was found for reveal or apply.
+    NoPendingFeeCommit = 519,
+    /// Fee config reveal was attempted too early (before timelock expiry).
+    FeeRevealTooEarly = 520,
+    /// Preimage does not match the committed hash during fee reveal.
+    FeePreimageMismatch = 521,
+    /// Dispute stake cap has been exceeded for this address.
+    DisputeStakeCapExceeded = 522,
+    /// Storage rent budget is insufficient for the requested operation.
+    InsufficientStorageRentBudget = 523,
+    /// The cumulative extension cap for this market has been reached.
+    ExtensionCapExceeded = 524,
+    /// The upgrade chain predecessor hash does not match the expected value.
+    UpgradeChainMismatch = 525,
+    /// An admin override nonce was replayed; reject to prevent replay attacks.
+    /// Oracle quote is an outlier relative to the rolling median history.
+    OracleQuoteOutlier = 527,
+    /// Maximum number of unique participants has been reached for this market.
+    MaxParticipantsReached = 528,
+    /// The bet amount exceeds the maximum cap for this user/market.
+    BetExceedsCap = 675,
+    /// An admin override was replayed; reject to prevent replay attacks.
+    ReplayedOverride = 526,
+    /// Oracle admin cooldown is currently active.
+    OracleAdminCooldownActive = 676,
+    /// Signer rotation cooldown is currently active.
+    SignerRotationCooldown = 677,
+    /// User is not whitelisted for this operation.
+    UserNotWhitelisted = 678,
+    /// User has been blacklisted.
+    UserBlacklisted = 679,
+    /// Creator has been blacklisted.
+    CreatorBlacklisted = 680,
+    /// Contract is already initialized.
+    AlreadyInitialized = 681,
+    /// Invalid timelock delay.
+    InvalidTimeLockDelay = 682,
+    /// Timelock has not yet expired.
+    TimeLockNotExpired = 683,
+    /// No pending update found.
+    NoPendingUpdate = 684,
+    /// A pending update already exists.
+    PendingUpdateExists = 685,
+    /// Invalid stake amount.
+    InvalidStakeAmount = 686,
+    /// Per-ledger bet cap exceeded.
+    PerLedgerBetCapExceeded = 687,
+    /// Registry is full.
+    RegistryFull = 688,
+    /// Batch contains no entries; at least one bet is required.
+    BatchEmpty = 545,
+    /// Batch exceeds the maximum allowed number of entries.
+    BatchSizeExceeded = 546,
+    /// Treasury update timelock has not yet expired.
+    TreasuryUpdateTimelocked = 689,
+    /// No pending treasury update found.
+    NoPendingTreasuryUpdate = 690,
+    /// A pending treasury update already exists.
+    PendingTreasuryUpdateExists = 691,
 }
 
 // ===== ERROR CATEGORIZATION AND RECOVERY SYSTEM =====
@@ -202,6 +350,26 @@ pub enum ErrorCategory {
     Market,
     Authentication,
     Unknown,
+}
+
+/// Off-chain recoverability annotation for each error variant.
+///
+/// # Client Guidance
+///
+/// | Label | Meaning | Off-chain action |
+/// |-------|---------|-----------------|
+/// | `Retryable` | Transient condition; the call may succeed if retried | Exponential back-off, max 3 attempts |
+/// | `RequiresAdmin` | Needs privileged intervention before retrying | Alert ops team; do not auto-retry |
+/// | `Terminal` | Permanent failure; retrying is futile | Surface to user; no retry |
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Recoverability {
+    /// Transient condition. The operation may succeed on a subsequent attempt.
+    Retryable,
+    /// Requires an administrator action before the operation can proceed.
+    RequiresAdmin,
+    /// Permanent failure. Further attempts will not succeed.
+    Terminal,
 }
 
 #[contracttype]
@@ -553,6 +721,27 @@ impl ErrorHandler {
             Error::InvalidState => {
                 "Invalid system state. The contract may be in an unexpected condition."
             }
+            Error::ForceResolveAlreadyUsed => {
+                "Force-resolve idempotency key already used. The operation is a safe no-op."
+            }
+            Error::ForceResolveReplayed => {
+                "Force-resolve idempotency key already used. Use a new unique key."
+            }
+            Error::ForceResolveReasonEmpty => {
+                "Force-resolve reason is empty. Provide a non-empty reason string."
+            }
+            Error::CannotArchiveFromState => {
+                "Market cannot be archived from its current state. Archive is only allowed from Resolved or Cancelled states."
+            }
+            Error::CannotRestoreFromState => {
+                "Market cannot be restored from its current state. Restore is only allowed from Archived state."
+            }
+            Error::MarketAlreadyArchived => {
+                "Market is already archived. Archived markets are immutable and cannot be modified."
+            }
+            Error::MarketAlreadyRestored => {
+                "Market is already restored. Cannot restore a market that is not archived."
+            }
             _ => "An error occurred. Please verify your parameters and try again.",
         };
         String::from_str(env, msg)
@@ -674,12 +863,23 @@ impl ErrorHandler {
             Error::AlreadyVoted
             | Error::AlreadyBet
             | Error::AlreadyClaimed
-            | Error::FeeAlreadyCollected => RecoveryStrategy::Skip,
+            | Error::FeeAlreadyCollected
+            | Error::ForceResolveAlreadyUsed => RecoveryStrategy::Skip,
+            Error::ForceResolveReplayed | Error::ForceResolveReasonEmpty => {
+                RecoveryStrategy::Retry
+            }
             Error::Unauthorized | Error::MarketClosed | Error::MarketResolved => {
                 RecoveryStrategy::Abort
             }
             Error::AdminNotSet | Error::DisputeFeeFailed => RecoveryStrategy::ManualIntervention,
             Error::InvalidState | Error::InvalidOracleConfig => RecoveryStrategy::NoRecovery,
+            Error::CannotArchiveFromState
+            | Error::CannotRestoreFromState
+            | Error::MarketAlreadyArchived
+            | Error::MarketAlreadyRestored => RecoveryStrategy::Abort,
+            Error::FeeExceedsMax => RecoveryStrategy::Retry,
+            Error::BetExceedsCap => RecoveryStrategy::NoRecovery,
+            Error::OperationWouldExceedBudget => RecoveryStrategy::NoRecovery,
             _ => RecoveryStrategy::Abort,
         }
     }
@@ -1074,6 +1274,7 @@ impl ErrorHandler {
             Error::AlreadyVoted
             | Error::AlreadyBet
             | Error::AlreadyClaimed
+            | Error::ForceResolveAlreadyUsed
             | Error::FeeAlreadyCollected
             | Error::Unauthorized
             | Error::MarketClosed
@@ -1081,7 +1282,8 @@ impl ErrorHandler {
             | Error::AdminNotSet
             | Error::DisputeFeeFailed
             | Error::InvalidState
-            | Error::InvalidOracleConfig => 0,
+            | Error::InvalidOracleConfig
+            | Error::OperationWouldExceedBudget => 0,
             _ => 1,
         }
     }
@@ -1174,13 +1376,18 @@ impl ErrorHandler {
     /// # Returns
     ///
     /// A tuple of (severity, category, recovery_strategy) for the error.
-    fn get_error_classification(error: &Error) -> (ErrorSeverity, ErrorCategory, RecoveryStrategy) {
+    pub(crate) fn get_error_classification(error: &Error) -> (ErrorSeverity, ErrorCategory, RecoveryStrategy) {
         match error {
             // Critical
             Error::AdminNotSet => (
                 ErrorSeverity::Critical,
                 ErrorCategory::System,
                 RecoveryStrategy::ManualIntervention,
+            ),
+            Error::AssetDecimalsMismatch => (
+                ErrorSeverity::Medium,
+                ErrorCategory::Validation,
+                RecoveryStrategy::Abort,
             ),
             Error::DisputeFeeFailed => (
                 ErrorSeverity::Critical,
@@ -1233,15 +1440,36 @@ impl ErrorHandler {
             Error::AlreadyVoted
             | Error::AlreadyBet
             | Error::AlreadyClaimed
+            | Error::ForceResolveAlreadyUsed
             | Error::NothingToClaim => (
                 ErrorSeverity::Low,
                 ErrorCategory::UserOperation,
                 RecoveryStrategy::Skip,
             ),
+            Error::ForceResolveReplayed | Error::ForceResolveReasonEmpty => (
+                ErrorSeverity::Low,
+                ErrorCategory::UserOperation,
+                RecoveryStrategy::Retry,
+            ),
             Error::FeeAlreadyCollected => (
                 ErrorSeverity::Low,
                 ErrorCategory::Financial,
                 RecoveryStrategy::Skip,
+            ),
+            Error::FeeExceedsMax => (
+                ErrorSeverity::Low,
+                ErrorCategory::Financial,
+                RecoveryStrategy::Retry,
+            ),
+            Error::BetExceedsCap => (
+                ErrorSeverity::Low,
+                ErrorCategory::Financial,
+                RecoveryStrategy::NoRecovery,
+            ),
+            Error::OperationWouldExceedBudget => (
+                ErrorSeverity::Critical,
+                ErrorCategory::System,
+                RecoveryStrategy::NoRecovery,
             ),
             _ => (
                 ErrorSeverity::Medium,
@@ -1280,6 +1508,9 @@ impl ErrorHandler {
                 "The oracle is temporarily unavailable. Please try again later."
             }
             (Error::InvalidInput, _) => "Check your input parameters and try again.",
+            (Error::OperationWouldExceedBudget, _) => {
+                "The operation requires too much CPU time. Try with fewer winners or split across multiple transactions."
+            }
             (_, ErrorCategory::Validation) => "Review and correct the input data.",
             (_, ErrorCategory::System) => {
                 "A system error occurred. Contact support if the issue persists."
@@ -1349,6 +1580,7 @@ impl Error {
                 "Bets have already been placed on this market (cannot update)"
             }
             Error::InsufficientBalance => "Insufficient balance for operation",
+            Error::InsufficientStorageRentBudget => "Insufficient storage rent for persistent key allocation",
             Error::OracleUnavailable => "Oracle is unavailable",
             Error::InvalidOracleConfig => "Invalid oracle configuration",
             Error::GasBudgetExceeded => "Gas budget exceeded",
@@ -1368,11 +1600,16 @@ impl Error {
             Error::DisputeCondNotMet => "Dispute resolution conditions not met",
             Error::DisputeFeeFailed => "Dispute fee distribution failed",
             Error::DisputeError => "Generic dispute subsystem error",
+            Error::DisputerCannotVote => "Dispute opener cannot vote on their own dispute",
+            Error::SweepAlreadyDone => "Unclaimed winnings already swept for this market",
+            Error::FeeArithmeticOverflow => "Fee arithmetic overflowed",
             Error::FeeAlreadyCollected => "Platform fee already collected",
             Error::NoFeesToCollect => "No fees available to collect",
             Error::InvalidExtensionDays => "Invalid extension days value",
             Error::ExtensionDenied => "Market extension not allowed",
             Error::AdminNotSet => "Admin address not set",
+            Error::FeeExceedsMax => "Fee is above the acceptable threshold",
+            Error::BetExceedsCap => "Bet amount exceeds the per-market maximum bet cap",
             Error::OracleStale => "Oracle data is stale",
             Error::OracleNoConsensus => "Oracle consensus not reached",
             Error::OracleVerified => "Oracle result already verified",
@@ -1394,7 +1631,9 @@ impl Error {
             Error::FeedIdTooLong => "Oracle feed ID exceeds maximum allowed length",
             Error::ComparisonTooLong => "Comparison operator exceeds maximum allowed length",
             Error::CategoryTooLong => "Category string exceeds maximum allowed length",
+            Error::CategoryTooShort => "Category string is shorter than the minimum allowed length",
             Error::TagTooLong => "Tag string exceeds maximum allowed length",
+            Error::TagTooShort => "Tag string is shorter than the minimum allowed length",
             Error::TooManyTags => "Too many tags specified for the market",
             Error::ExtensionReasonTooLong => "Extension reason exceeds maximum allowed length",
             Error::SourceTooLong => "Source identifier exceeds maximum allowed length",
@@ -1403,6 +1642,7 @@ impl Error {
             Error::TooManyExtensions => "Too many extension history entries",
             Error::TooManyOracleResults => "Too many oracle results in multi-oracle aggregation",
             Error::TooManyWinningOutcomes => "Too many winning outcomes specified",
+            Error::ArchiveFull => "Event archive is full; maximum archive capacity reached",
 
             // Circuit breaker errors
             Error::CBNotInitialized => "Circuit breaker not initialized",
@@ -1410,6 +1650,26 @@ impl Error {
             Error::CBNotOpen => "Circuit breaker is not open (cannot recover)",
             Error::CBOpen => "Circuit breaker is open (operations blocked)",
             Error::CBError => "Generic circuit breaker subsystem error",
+            Error::RateLimitExceeded => "Rate limit exceeded; too many requests in the time window",
+            Error::NoPendingFeeCommit => "No pending fee config commit found",
+            Error::FeeRevealTooEarly => "Fee config reveal attempted too early",
+            Error::FeePreimageMismatch => "Preimage does not match the committed hash",
+            Error::DisputeStakeCapExceeded => "Dispute stake cap exceeded for this address",
+            Error::InsufficientStorageRentBudget => {
+                "Insufficient storage rent budget for operation"
+            }
+            Error::ExtensionCapExceeded => "Cumulative extension cap for this market has been reached",
+            Error::UpgradeChainMismatch => "Upgrade chain predecessor hash mismatch",
+            Error::ReplayedOverride => "Admin override nonce replayed; rejected",
+            Error::AssetDecimalsMismatch => "Asset decimals mismatch between stored and SAC decimals",
+            Error::DuplicateMarketId => "Market ID already exists in the registry",
+            Error::CumulativeExtensionCapHit => "Cumulative extension cap reached; no further extensions allowed",
+            Error::IllegalMarketStateTransition => "Illegal market state transition attempted",
+            Error::OracleQuoteOutlier => "Oracle quote is an outlier relative to the rolling median",
+            Error::TreasuryUpdateTimelocked => "Treasury update timelock has not yet expired",
+            Error::NoPendingTreasuryUpdate => "No pending treasury update found",
+            Error::PendingTreasuryUpdateExists => "A pending treasury update already exists",
+            _ => "An unspecified error occurred.",
         }
     }
 
@@ -1456,11 +1716,16 @@ impl Error {
             Error::DisputeCondNotMet => "DISPUTE_RESOLUTION_CONDITIONS_NOT_MET",
             Error::DisputeFeeFailed => "DISPUTE_FEE_DISTRIBUTION_FAILED",
             Error::DisputeError => "DISPUTE_ERROR",
+            Error::DisputerCannotVote => "DISPUTER_CANNOT_VOTE",
+            Error::SweepAlreadyDone => "SWEEP_ALREADY_DONE",
+            Error::FeeArithmeticOverflow => "FEE_ARITHMETIC_OVERFLOW",
             Error::FeeAlreadyCollected => "FEE_ALREADY_COLLECTED",
             Error::NoFeesToCollect => "NO_FEES_TO_COLLECT",
             Error::InvalidExtensionDays => "INVALID_EXTENSION_DAYS",
             Error::ExtensionDenied => "EXTENSION_DENIED",
             Error::AdminNotSet => "ADMIN_NOT_SET",
+            Error::FeeExceedsMax => "FEE_ABOVE_ACCEPTABLE",
+            Error::BetExceedsCap => "BET_EXCEEDS_CAP",
             Error::OracleStale => "ORACLE_STALE",
             Error::OracleNoConsensus => "ORACLE_NO_CONSENSUS",
             Error::OracleVerified => "ORACLE_VERIFIED",
@@ -1482,7 +1747,9 @@ impl Error {
             Error::FeedIdTooLong => "FEED_ID_TOO_LONG",
             Error::ComparisonTooLong => "COMPARISON_TOO_LONG",
             Error::CategoryTooLong => "CATEGORY_TOO_LONG",
+            Error::CategoryTooShort => "CATEGORY_TOO_SHORT",
             Error::TagTooLong => "TAG_TOO_LONG",
+            Error::TagTooShort => "TAG_TOO_SHORT",
             Error::TooManyTags => "TOO_MANY_TAGS",
             Error::ExtensionReasonTooLong => "EXTENSION_REASON_TOO_LONG",
             Error::SourceTooLong => "SOURCE_TOO_LONG",
@@ -1491,6 +1758,7 @@ impl Error {
             Error::TooManyExtensions => "TOO_MANY_EXTENSIONS",
             Error::TooManyOracleResults => "TOO_MANY_ORACLE_RESULTS",
             Error::TooManyWinningOutcomes => "TOO_MANY_WINNING_OUTCOMES",
+            Error::ArchiveFull => "ARCHIVE_FULL",
 
             // Circuit breaker errors
             Error::CBNotInitialized => "CIRCUIT_BREAKER_NOT_INITIALIZED",
@@ -1498,6 +1766,251 @@ impl Error {
             Error::CBNotOpen => "CIRCUIT_BREAKER_NOT_OPEN",
             Error::CBOpen => "CIRCUIT_BREAKER_OPEN",
             Error::CBError => "CIRCUIT_BREAKER_ERROR",
+            Error::RateLimitExceeded => "RATE_LIMIT_EXCEEDED",
+            Error::NoPendingFeeCommit => "NO_PENDING_FEE_COMMIT",
+            Error::FeeRevealTooEarly => "FEE_REVEAL_TOO_EARLY",
+            Error::FeePreimageMismatch => "FEE_PREIMAGE_MISMATCH",
+            Error::DisputeStakeCapExceeded => "DISPUTE_STAKE_CAP_EXCEEDED",
+            Error::InsufficientStorageRentBudget => "INSUFFICIENT_STORAGE_RENT_BUDGET",
+            Error::ExtensionCapExceeded => "EXTENSION_CAP_EXCEEDED",
+            Error::UpgradeChainMismatch => "UPGRADE_CHAIN_MISMATCH",
+            Error::ReplayedOverride => "REPLAYED_OVERRIDE",
+            Error::AssetDecimalsMismatch => "ASSET_DECIMALS_MISMATCH",
+            Error::DuplicateMarketId => "DUPLICATE_MARKET_ID",
+            Error::CumulativeExtensionCapHit => "CUMULATIVE_EXTENSION_CAP_HIT",
+            Error::IllegalMarketStateTransition => "ILLEGAL_MARKET_STATE_TRANSITION",
+            Error::OracleQuoteOutlier => "ORACLE_QUOTE_OUTLIER",
+            Error::TreasuryUpdateTimelocked => "TREASURY_UPDATE_TIMELOCKED",
+            Error::NoPendingTreasuryUpdate => "NO_PENDING_TREASURY_UPDATE",
+            Error::PendingTreasuryUpdateExists => "PENDING_TREASURY_UPDATE_EXISTS",
+            _ => "UNSPECIFIED_ERROR",
+        }
+    }
+
+    /// Returns a **stable** numeric client code for use in off-chain error
+    /// handling, SDK integrations, and monitoring dashboards.
+    ///
+    /// # Stability guarantee
+    ///
+    /// Once a variant is assigned a client code, that assignment **must not
+    /// change** across releases. Clients SHOULD use these codes rather than
+    /// the raw `Error as u32` discriminant, whose value may shift when new
+    /// variants are inserted.
+    ///
+    /// # Range allocation
+    ///
+    /// | Range      | Category          |
+    /// |------------|-------------------|
+    /// | 1000–1099  | Oracle            |
+    /// | 1100–1199  | Market            |
+    /// | 1200–1299  | Validation        |
+    /// | 1300–1399  | Financial         |
+    /// | 1400–1499  | Dispute           |
+    /// | 1500–1599  | Authentication    |
+    /// | 1600–1699  | Circuit Breaker   |
+    /// | 1700–1799  | System            |
+    /// | 1800–1899  | User Operation    |
+    /// | 1900–1999  | Metadata / Limits |
+    pub fn client_code(&self) -> u32 {
+        match self {
+            // ── Oracle (1000–1099) ───────────────────────────────────────────
+            Error::OracleUnavailable              => 1000,
+            Error::InvalidOracleConfig            => 1001,
+            Error::OracleStale                    => 1002,
+            Error::OracleNoConsensus              => 1003,
+            Error::OracleVerified                 => 1004,
+            Error::FallbackOracleUnavailable      => 1005,
+            Error::ResolutionTimeoutReached       => 1006,
+            Error::OracleConfidenceTooWide        => 1007,
+            Error::InvalidOracleFeed              => 1008,
+            Error::OracleCallbackAuthFailed       => 1009,
+            Error::OracleCallbackUnauthorized     => 1010,
+            Error::OracleCallbackInvalidSignature => 1011,
+            Error::OracleCallbackReplayDetected   => 1012,
+            Error::OracleCallbackTimeout          => 1013,
+            Error::OracleQuoteOutlier             => 1014,
+
+            // ── Market (1100–1199) ───────────────────────────────────────────
+            Error::MarketNotFound                 => 1100,
+            Error::MarketClosed                   => 1101,
+            Error::MarketResolved                 => 1102,
+            Error::MarketNotResolved              => 1103,
+            Error::MarketNotReady                 => 1104,
+            Error::InvalidState                   => 1105,
+            Error::IllegalMarketStateTransition   => 1106,
+            Error::DuplicateMarketId              => 1107,
+            Error::MaxParticipantsReached         => 1108,
+
+            // ── Validation (1200–1299) ───────────────────────────────────────
+            Error::InvalidQuestion                => 1200,
+            Error::InvalidOutcomes                => 1201,
+            Error::InvalidDuration                => 1202,
+            Error::InvalidThreshold               => 1203,
+            Error::InvalidComparison              => 1204,
+            Error::InvalidInput                   => 1205,
+            Error::InvalidOutcome                 => 1206,
+            Error::AssetDecimalsMismatch          => 1207,
+            Error::InvalidExtensionDays           => 1208,
+            Error::ExtensionDenied                => 1209,
+            Error::CumulativeExtensionCapHit      => 1210,
+            Error::ExtensionCapExceeded           => 1211,
+
+            // ── Financial (1300–1399) ────────────────────────────────────────
+            Error::InsufficientStake              => 1300,
+            Error::InsufficientBalance            => 1301,
+            Error::NothingToClaim                 => 1302,
+            Error::AlreadyClaimed                 => 1303,
+            Error::FeeArithmeticOverflow          => 1304,
+            Error::FeeAlreadyCollected            => 1305,
+            Error::NoFeesToCollect                => 1306,
+            Error::InvalidFeeConfig               => 1307,
+            Error::FeeExceedsMax                  => 1308,
+            Error::SweepAlreadyDone               => 1309,
+            Error::DisputeFeeFailed               => 1310,
+            Error::NoPendingFeeCommit             => 1311,
+            Error::FeeRevealTooEarly              => 1312,
+            Error::FeePreimageMismatch            => 1313,
+            Error::BetExceedsCap                  => 1314,
+            Error::MaxBetCapExceeded              => 1315,
+
+            // ── Dispute (1400–1499) ──────────────────────────────────────────
+            Error::AlreadyDisputed                => 1400,
+            Error::DisputeVoteExpired             => 1401,
+            Error::DisputeVoteDenied              => 1402,
+            Error::DisputeAlreadyVoted            => 1403,
+            Error::DisputeCondNotMet              => 1404,
+            Error::DisputeError                   => 1405,
+            Error::DisputerCannotVote             => 1406,
+            Error::DisputeStakeCapExceeded        => 1407,
+
+            // ── Authentication (1500–1599) ───────────────────────────────────
+            Error::Unauthorized                   => 1500,
+            Error::ReplayedOverride               => 1501,
+            Error::UserNotWhitelisted             => 1502,
+            Error::UserBlacklisted                => 1503,
+            Error::CreatorBlacklisted             => 1504,
+
+            // ── Circuit Breaker (1600–1699) ──────────────────────────────────
+            Error::CBNotInitialized               => 1600,
+            Error::CBAlreadyOpen                  => 1601,
+            Error::CBNotOpen                      => 1602,
+            Error::CBOpen                         => 1603,
+            Error::CBError                        => 1604,
+            Error::RateLimitExceeded              => 1605,
+            Error::PerLedgerBetCapExceeded        => 1606,
+
+            // ── System (1700–1799) ───────────────────────────────────────────
+            Error::ConfigNotFound                 => 1700,
+            Error::AdminNotSet                    => 1701,
+            Error::GasBudgetExceeded              => 1702,
+            Error::OperationWouldExceedBudget     => 1703,
+            Error::InsufficientStorageRentBudget  => 1704,
+            Error::UpgradeChainMismatch           => 1705,
+            Error::AlreadyInitialized             => 1706,
+            Error::InvalidTimeLockDelay           => 1707,
+            Error::TimeLockNotExpired             => 1708,
+            Error::NoPendingUpdate                => 1709,
+            Error::PendingUpdateExists            => 1710,
+            Error::AdminActionTimelocked          => 1711,
+            Error::OracleAdminCooldownActive      => 1712,
+            Error::SignerRotationCooldown         => 1713,
+            Error::Overflow                       => 1714,
+            Error::InvalidCap                     => 1715,
+
+            // ── User Operation (1800–1899) ───────────────────────────────────
+            Error::AlreadyVoted                   => 1800,
+            Error::AlreadyBet                     => 1801,
+            Error::BetsAlreadyPlaced              => 1802,
+            Error::ForceResolveAlreadyUsed        => 1803,
+            Error::ForceResolveReplayed           => 1804,
+            Error::ForceResolveReasonEmpty        => 1805,
+            Error::IdempotentBatchAlreadyApplied  => 1806,
+            Error::InvalidStakeAmount             => 1807,
+
+            // ── Metadata / Limits (1900–1999) ────────────────────────────────
+            Error::QuestionTooLong                => 1900,
+            Error::OutcomeTooLong                 => 1901,
+            Error::TooManyOutcomes                => 1902,
+            Error::FeedIdTooLong                  => 1903,
+            Error::ComparisonTooLong              => 1904,
+            Error::CategoryTooLong                => 1905,
+            Error::CategoryTooShort               => 1906,
+            Error::TagTooLong                     => 1907,
+            Error::TagTooShort                    => 1908,
+            Error::TooManyTags                    => 1909,
+            Error::ExtensionReasonTooLong         => 1910,
+            Error::SourceTooLong                  => 1911,
+            Error::ErrorMessageTooLong            => 1912,
+            Error::SignatureTooLong               => 1913,
+            Error::TooManyExtensions              => 1914,
+            Error::TooManyOracleResults           => 1915,
+            Error::TooManyWinningOutcomes         => 1916,
+            Error::ArchiveFull                    => 1917,
+            Error::ReasonTableFull                => 1918,
+            Error::RegistryFull                   => 1919,
+            // Catch-all for variants not yet assigned an off-chain code. Callers
+            // that hit this value should treat it as an unmapped error.
+            _ => 0,
+        }
+    }
+
+    /// Returns the off-chain recoverability label for this error.
+    ///
+    /// # Stability guarantee
+    ///
+    /// The label for each variant is part of the public API and **must not
+    /// change** once assigned. Client SDKs use these labels to decide retry
+    /// policy without having to maintain their own copy of the mapping.
+    ///
+    /// # Labels
+    ///
+    /// | Label           | Meaning                                     |
+    /// |-----------------|---------------------------------------------|
+    /// | `Retryable`     | Transient; caller MAY retry with back-off.  |
+    /// | `RequiresAdmin` | Needs operator/admin action before retry.   |
+    /// | `Terminal`      | Permanent; caller MUST NOT retry.           |
+    pub fn recoverability(&self) -> Recoverability {
+        match self {
+            // ── Retryable ────────────────────────────────────────────────────
+            // These are transient conditions that may resolve on their own.
+            Error::OracleUnavailable
+            | Error::OracleStale
+            | Error::OracleNoConsensus
+            | Error::OracleConfidenceTooWide
+            | Error::OracleCallbackTimeout
+            | Error::FallbackOracleUnavailable
+            | Error::RateLimitExceeded
+            | Error::PerLedgerBetCapExceeded
+            | Error::CBOpen
+            | Error::InsufficientStorageRentBudget
+            | Error::ResolutionTimeoutReached
+            | Error::TimeLockNotExpired
+            | Error::FeeRevealTooEarly
+            | Error::OracleAdminCooldownActive
+            | Error::SignerRotationCooldown => Recoverability::Retryable,
+
+            // ── Requires Admin ───────────────────────────────────────────────
+            // These cannot resolve without privileged intervention.
+            Error::AdminNotSet
+            | Error::CBNotInitialized
+            | Error::CBAlreadyOpen
+            | Error::CBNotOpen
+            | Error::CBError
+            | Error::ConfigNotFound
+            | Error::InvalidOracleConfig
+            | Error::InvalidFeeConfig
+            | Error::UpgradeChainMismatch
+            | Error::PendingUpdateExists
+            | Error::NoPendingUpdate
+            | Error::AssetDecimalsMismatch
+            | Error::InvalidOracleFeed
+            | Error::AdminActionTimelocked
+            | Error::NoPendingFeeCommit => Recoverability::RequiresAdmin,
+
+            // ── Terminal ─────────────────────────────────────────────────────
+            // All other errors are permanent for the current call; the same
+            // inputs will always produce the same rejection.
+            _ => Recoverability::Terminal,
         }
     }
 }
@@ -1564,13 +2077,17 @@ mod tests {
             Error::DisputeCondNotMet,
             Error::DisputeFeeFailed,
             Error::DisputeError,
+            Error::SweepAlreadyDone,
+            Error::FeeArithmeticOverflow,
             Error::FeeAlreadyCollected,
             Error::NoFeesToCollect,
             Error::InvalidExtensionDays,
             Error::ExtensionDenied,
             Error::GasBudgetExceeded,
             Error::AdminNotSet,
+            Error::AssetDecimalsMismatch,
             Error::InvalidOracleFeed,
+            Error::FeeExceedsMax,
             // Metadata length limit errors
             Error::QuestionTooLong,
             Error::OutcomeTooLong,
@@ -1578,7 +2095,9 @@ mod tests {
             Error::FeedIdTooLong,
             Error::ComparisonTooLong,
             Error::CategoryTooLong,
+            Error::CategoryTooShort,
             Error::TagTooLong,
+            Error::TagTooShort,
             Error::TooManyTags,
             Error::ExtensionReasonTooLong,
             Error::SourceTooLong,
@@ -1587,13 +2106,31 @@ mod tests {
             Error::TooManyExtensions,
             Error::TooManyOracleResults,
             Error::TooManyWinningOutcomes,
+            Error::ArchiveFull,
             // Circuit breaker errors
-            Error::AdminNotSet,
             Error::CBNotInitialized,
             Error::CBAlreadyOpen,
             Error::CBNotOpen,
             Error::CBOpen,
             Error::CBError,
+            Error::RateLimitExceeded,
+            Error::CumulativeExtensionCapHit,
+            Error::DuplicateMarketId,
+            Error::ForceResolveAlreadyUsed,
+            Error::IllegalMarketStateTransition,
+            Error::FeeExceedsMax,
+            Error::NoPendingFeeCommit,
+            Error::FeeRevealTooEarly,
+            Error::FeePreimageMismatch,
+            Error::DisputeStakeCapExceeded,
+            Error::InsufficientStorageRentBudget,
+            Error::ExtensionCapExceeded,
+            Error::UpgradeChainMismatch,
+            Error::ReplayedOverride,
+            Error::OracleQuoteOutlier,
+            Error::TreasuryUpdateTimelocked,
+            Error::NoPendingTreasuryUpdate,
+            Error::PendingTreasuryUpdateExists,
         ]
     }
 

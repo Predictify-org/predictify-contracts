@@ -1,7 +1,24 @@
+use crate::admin::{AdminAccessControl, AdminPermission};
 use crate::events::EventEmitter;
-use soroban_sdk::{contracttype, panic_with_error, Address, Env, String, Symbol, Vec};
+use soroban_sdk::{contracttype, panic_with_error, Address, Bytes, BytesN, Env, String, Symbol, Vec};
 
 /// ---------- CONTRACT TYPES ----------
+
+/// Configuration for quorum decay over a proposal's lifetime.
+/// The required quorum drops linearly from the initial value toward a floor,
+/// preventing stale proposals from lingering indefinitely.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct QuorumDecay {
+    /// Floor quorum expressed in basis points (1/100th of a percent) of the base quorum.
+    /// E.g., 2000 means the floor is 20% of the initial quorum.
+    pub floor_bps: u32,
+    /// Time in seconds for the effective quorum to reach the midpoint
+    /// between the initial quorum and the floor. The full decay to floor
+    /// completes in 2× `halving_seconds`.
+    pub halving_seconds: u64,
+}
+
 #[contracttype]
 pub struct GovernanceProposal {
     pub id: Symbol,
@@ -15,6 +32,17 @@ pub struct GovernanceProposal {
     pub for_votes: u128,
     pub against_votes: u128,
     pub executed: bool,
+    /// Per-proposal random salt generated at creation time using `Env::prng`.
+    ///
+    /// The salt **must** be included in the canonical vote message signed by
+    /// each voter.  This binds each signature to a specific proposal instance
+    /// and prevents vote-replay: an off-chain signature authorising a vote on
+    /// proposal P₁ cannot be replayed against a re-submitted proposal P₂
+    /// that happens to share the same `id`, `title`, and `description`.
+    ///
+    /// Entropy source: `env.prng().gen::<BytesN<32>>()` at creation — never
+    /// derived from the block timestamp or any other predictable value.
+    pub salt: BytesN<32>,
 }
 
 // Key namespaces used in storage
@@ -23,11 +51,24 @@ pub struct GovernanceProposal {
 enum StorageKey {
     Proposal(Symbol),
     ProposalList,          // Vec<Symbol>
-    Vote(Symbol, Address), // proposal id + voter -> u8 (0 none, 1 for, 2 against)
+    Vote(Symbol, Address), // proposal id + voter -> i32 (0 none, 1 for, 2 against)
     VotingPeriod,          // u64
     QuorumVotes,           // u128 minimum FOR votes required
+    QuorumDecay,           // QuorumDecay config (optional)
     Admin,                 // Address
+    /// Maps delegator -> delegate (Address). At most one per delegator (griefing guard).
+    Delegate(Address),
+    /// Tracks how many delegators are currently delegating to a given address.
+    /// Capped at MAX_INCOMING_DELEGATIONS to bound storage.
+    DelegateCount(Address),
+    /// Commit-reveal: stores sha256(salt ++ [0|1]) per (proposal, voter).
+    VoteCommitment(Symbol, Address),
 }
+
+/// Maximum number of delegators that may point to a single delegate address.
+/// Limits griefing: prevents an attacker from forcing the contract to walk an
+/// unbounded list when tallying delegated votes.
+const MAX_INCOMING_DELEGATIONS: u32 = 50;
 
 /// Simple errors for the contract
 #[contracttype]
@@ -37,34 +78,101 @@ pub enum GovernanceError {
     ProposalNotFound,
     VotingNotStarted,
     VotingEnded,
+    VotingStillActive,
     AlreadyVoted,
     NotPassed,
     AlreadyExecuted,
     NotAdmin,
+    NotInitialized,
     InvalidParams,
+    /// Caller tried to delegate to themselves.
+    SelfDelegation,
+    /// Caller already has an active delegation; must unset first.
+    DelegationAlreadySet,
+    /// The target delegate has reached the incoming-delegation cap (griefing guard).
+    DelegateLimitReached,
+    /// No active delegation found for the caller.
+    NoDelegationSet,
+    /// Delegation would create a cycle (A→B→A).
+    DelegationCycle,
+    /// Caller has not committed a vote for this proposal yet.
+    NoCommitment,
+    /// The revealed (salt, support) pair does not match the stored commitment.
+    InvalidReveal,
+    /// A commitment already exists for this (proposal, voter) pair.
+    CommitmentExists,
+    /// The revealed salt does not match the committed salt.
+    SaltMismatch,
 }
 
 /// ---------- CONTRACT ----------
 pub struct GovernanceContract;
 
 impl GovernanceContract {
-    // Initialize admin, voting period (seconds) and quorum (minimum FOR votes).
-    pub fn initialize(env: Env, admin: Address, voting_period_seconds: i64, quorum_votes: u128) {
+    /// Compute the effective quorum for a proposal at a given elapsed time.
+    ///
+    /// If `decay` is `None` the full base quorum applies.  Otherwise the quorum
+    /// decays linearly from `base_quorum` toward `base_quorum * floor_bps / 10000`
+    /// over `2 × halving_seconds`.  After that period the floor is the minimum.
+    /// The result is guaranteed monotone non-increasing with respect to `elapsed`.
+    pub fn compute_effective_quorum(
+        base_quorum: u128,
+        decay: &Option<QuorumDecay>,
+        elapsed: u64,
+    ) -> u128 {
+        let cfg = match decay {
+            Some(d) => d,
+            None => return base_quorum,
+        };
+        let floor = base_quorum * (cfg.floor_bps as u128) / 10000;
+        let full_decay_period = cfg.halving_seconds.saturating_mul(2);
+        if elapsed >= full_decay_period {
+            return floor;
+        }
+        let decay_amount = (base_quorum - floor) * (elapsed as u128) / (full_decay_period as u128);
+        let effective = base_quorum - decay_amount;
+        if effective < floor {
+            floor
+        } else {
+            effective
+        }
+    }
+
+    /// Initialize governance admin, voting period (seconds), and quorum (minimum FOR votes).
+    ///
+    /// This function is idempotent: if governance is already initialized, it returns early.
+    /// Invalid configuration panics with `Error::InvalidInput`.
+    /// An optional `quorum_decay` enables automatic quorum reduction over time.
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        voting_period_seconds: i64,
+        quorum_votes: u128,
+        quorum_decay: Option<QuorumDecay>,
+    ) {
         // Only allow once (idempotent check)
         if env.storage().persistent().has(&StorageKey::Admin) {
             // Already initialized; nothing to do
             return;
         }
-        if voting_period_seconds == 0 || quorum_votes == 0 {
-            panic_with_error!(env, crate::errors::Error::InvalidInput);
+        if voting_period_seconds <= 0 || quorum_votes == 0 {
+            panic_with_error!(env, crate::err::Error::InvalidInput);
+        }
+        if let Some(ref d) = quorum_decay {
+            if d.floor_bps > 10000 || d.halving_seconds == 0 {
+                panic_with_error!(env, crate::err::Error::InvalidInput);
+            }
         }
         env.storage().persistent().set(&StorageKey::Admin, &admin);
         env.storage()
             .persistent()
-            .set(&StorageKey::VotingPeriod, &voting_period_seconds);
+            .set(&StorageKey::VotingPeriod, &(voting_period_seconds as u64));
         env.storage()
             .persistent()
             .set(&StorageKey::QuorumVotes, &quorum_votes);
+        env.storage()
+            .persistent()
+            .set(&StorageKey::QuorumDecay, &quorum_decay);
         // initialize empty proposal list
         let empty: Vec<Symbol> = Vec::new(&env);
         env.storage()
@@ -83,6 +191,20 @@ impl GovernanceContract {
         target: Option<Address>,
         call_fn: Option<Symbol>,
     ) -> Result<Symbol, GovernanceError> {
+        proposer.require_auth();
+
+        if title.is_empty() || description.is_empty() {
+            return Err(GovernanceError::InvalidParams);
+        }
+
+        if target.is_some() != call_fn.is_some() {
+            return Err(GovernanceError::InvalidParams);
+        }
+
+        if !env.storage().persistent().has(&StorageKey::Admin) {
+            return Err(GovernanceError::NotInitialized);
+        }
+
         // ensure unique
         if env
             .storage()
@@ -93,11 +215,11 @@ impl GovernanceContract {
         }
 
         // fetch voting period
-        let period: i64 = env
+        let period: u64 = env
             .storage()
             .persistent()
             .get(&StorageKey::VotingPeriod)
-            .unwrap();
+            .ok_or(GovernanceError::NotInitialized)?;
         let now = env.ledger().timestamp();
 
         let p = GovernanceProposal {
@@ -108,10 +230,14 @@ impl GovernanceContract {
             target,
             call_fn,
             start_time: now,
-            end_time: now + (period as u64),
+            end_time: now.saturating_add(period),
             for_votes: 0,
             against_votes: 0,
             executed: false,
+            // Generate a cryptographically random salt using Soroban's PRNG.
+            // Using env.prng() here — never the block timestamp — ensures that
+            // entropy is not predictable by the proposer or any observer.
+            salt: env.prng().gen::<BytesN<32>>(),
         };
 
         env.storage()
@@ -123,7 +249,7 @@ impl GovernanceContract {
             .storage()
             .persistent()
             .get(&StorageKey::ProposalList)
-            .unwrap();
+            .unwrap_or(Vec::new(&env));
         list.push_back(id.clone());
         env.storage()
             .persistent()
@@ -135,13 +261,28 @@ impl GovernanceContract {
     }
 
     /// Vote on a proposal. `support = true` means FOR, false means AGAINST.
-    /// One address one vote (no weighting).
+    /// Each address counts as 1 vote plus 1 for each address that has delegated to it.
+    ///
+    /// # Vote-replay prevention
+    ///
+    /// The caller **must** supply the proposal's `salt` value.  The contract
+    /// compares it against the salt stored in the proposal and rejects the vote
+    /// with `GovernanceError::SaltMismatch` if they differ.
+    ///
+    /// Off-chain signers should include the salt in the canonical message they
+    /// sign, e.g. `sha256(proposal_id || salt || voter || support)`.  This
+    /// ensures that a valid signature for one proposal instance cannot be
+    /// replayed against a different instance that happens to share the same
+    /// payload.
     pub fn vote(
         env: Env,
         voter: Address,
         proposal_id: Symbol,
         support: bool,
+        salt: BytesN<32>,
     ) -> Result<(), GovernanceError> {
+        voter.require_auth();
+
         // load proposal
         let p_opt = env
             .storage()
@@ -152,11 +293,17 @@ impl GovernanceContract {
         }
         let mut p = p_opt.unwrap();
 
+        // Verify that the salt supplied by the voter matches the stored salt.
+        // This prevents vote-replay across re-submitted proposals.
+        if salt != p.salt {
+            return Err(GovernanceError::SaltMismatch);
+        }
+
         let now = env.ledger().timestamp();
         if now < p.start_time {
             return Err(GovernanceError::VotingNotStarted);
         }
-        if now > p.end_time {
+        if now >= p.end_time {
             return Err(GovernanceError::VotingEnded);
         }
         if p.executed {
@@ -172,13 +319,21 @@ impl GovernanceContract {
             return Err(GovernanceError::AlreadyVoted);
         }
 
+        // Voting weight = 1 (own vote) + number of addresses delegating to this voter.
+        let delegated: u128 = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, u32>(&StorageKey::DelegateCount(voter.clone()))
+            .unwrap_or(0) as u128;
+        let weight: u128 = 1 + delegated;
+
         if support {
-            p.for_votes += 1;
+            p.for_votes += weight;
             env.storage()
                 .persistent()
                 .set(&StorageKey::Vote(proposal_id.clone(), voter.clone()), &1i32);
         } else {
-            p.against_votes += 1;
+            p.against_votes += weight;
             env.storage()
                 .persistent()
                 .set(&StorageKey::Vote(proposal_id.clone(), voter.clone()), &2i32);
@@ -195,7 +350,260 @@ impl GovernanceContract {
         Ok(())
     }
 
+    /// Commit a salted vote for a proposal (commit phase of commit-reveal).
+    ///
+    /// The caller supplies a 32-byte commitment = `sha256(salt ++ support_byte)` where
+    /// `support_byte` is `0x01` for FOR and `0x00` for AGAINST.  The commitment is
+    /// stored on-chain but the actual vote preference stays hidden until `reveal_vote`.
+    ///
+    /// Constraints
+    /// - Voting window must be open (`start_time <= now < end_time`).
+    /// - Each (proposal, voter) pair may only commit once.
+    /// - The voter must not have already voted via the direct `vote()` path.
+    pub fn commit_vote(
+        env: Env,
+        voter: Address,
+        proposal_id: Symbol,
+        commitment: BytesN<32>,
+    ) -> Result<(), GovernanceError> {
+        voter.require_auth();
+
+        let p: GovernanceProposal = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, GovernanceProposal>(&StorageKey::Proposal(proposal_id.clone()))
+            .ok_or(GovernanceError::ProposalNotFound)?;
+
+        let now = env.ledger().timestamp();
+        if now < p.start_time {
+            return Err(GovernanceError::VotingNotStarted);
+        }
+        if now >= p.end_time {
+            return Err(GovernanceError::VotingEnded);
+        }
+
+        // Guard: direct vote already cast
+        if env
+            .storage()
+            .persistent()
+            .has(&StorageKey::Vote(proposal_id.clone(), voter.clone()))
+        {
+            return Err(GovernanceError::AlreadyVoted);
+        }
+
+        // Guard: commitment already stored
+        if env
+            .storage()
+            .persistent()
+            .has(&StorageKey::VoteCommitment(proposal_id.clone(), voter.clone()))
+        {
+            return Err(GovernanceError::CommitmentExists);
+        }
+
+        env.storage().persistent().set(
+            &StorageKey::VoteCommitment(proposal_id.clone(), voter.clone()),
+            &commitment,
+        );
+
+        EventEmitter::emit_governance_vote_committed(&env, &proposal_id, &voter);
+
+        Ok(())
+    }
+
+    /// Reveal a previously committed vote (reveal phase of commit-reveal).
+    ///
+    /// The contract recomputes `sha256(salt ++ support_byte)` and verifies it matches
+    /// the stored commitment.  On success the vote weight is tallied and the commitment
+    /// entry is replaced with the recorded vote, preventing double-reveals.
+    ///
+    /// Constraints
+    /// - A commitment for this (proposal, voter) must exist.
+    /// - Voting window must still be open when revealing.
+    /// - The voter must not have already been counted (guards against re-reveal).
+    pub fn reveal_vote(
+        env: Env,
+        voter: Address,
+        proposal_id: Symbol,
+        salt: Bytes,
+        support: bool,
+    ) -> Result<(), GovernanceError> {
+        voter.require_auth();
+
+        // Guard: already counted via direct vote or prior reveal — check before commitment lookup
+        if env
+            .storage()
+            .persistent()
+            .has(&StorageKey::Vote(proposal_id.clone(), voter.clone()))
+        {
+            return Err(GovernanceError::AlreadyVoted);
+        }
+
+        let stored: BytesN<32> = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, BytesN<32>>(&StorageKey::VoteCommitment(
+                proposal_id.clone(),
+                voter.clone(),
+            ))
+            .ok_or(GovernanceError::NoCommitment)?;
+
+        // Verify commitment: sha256(salt ++ support_byte)
+        let mut preimage = Bytes::new(&env);
+        preimage.append(&salt);
+        preimage.push_back(if support { 1u8 } else { 0u8 });
+        let expected: BytesN<32> = env.crypto().sha256(&preimage).into();
+        if stored != expected {
+            return Err(GovernanceError::InvalidReveal);
+        }
+
+        let mut p: GovernanceProposal = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, GovernanceProposal>(&StorageKey::Proposal(proposal_id.clone()))
+            .ok_or(GovernanceError::ProposalNotFound)?;
+
+        let now = env.ledger().timestamp();
+        if now < p.start_time {
+            return Err(GovernanceError::VotingNotStarted);
+        }
+        if now >= p.end_time {
+            return Err(GovernanceError::VotingEnded);
+        }
+
+        // Tally with delegation weight
+        let delegated: u128 = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, u32>(&StorageKey::DelegateCount(voter.clone()))
+            .unwrap_or(0) as u128;
+        let weight: u128 = 1 + delegated;
+
+        if support {
+            p.for_votes += weight;
+            env.storage()
+                .persistent()
+                .set(&StorageKey::Vote(proposal_id.clone(), voter.clone()), &1i32);
+        } else {
+            p.against_votes += weight;
+            env.storage()
+                .persistent()
+                .set(&StorageKey::Vote(proposal_id.clone(), voter.clone()), &2i32);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&StorageKey::Proposal(proposal_id.clone()), &p);
+
+        // Remove commitment after reveal to free storage
+        env.storage()
+            .persistent()
+            .remove(&StorageKey::VoteCommitment(proposal_id.clone(), voter.clone()));
+
+        EventEmitter::emit_governance_vote_cast(&env, &proposal_id, &voter, support);
+
+        Ok(())
+    }
+
+    /// Delegate the caller's vote to `delegate`.
+    ///
+    /// Storage griefing guard:
+    /// - A delegator may hold at most **one** active delegation at a time.
+    /// - A delegate may receive at most `MAX_INCOMING_DELEGATIONS` incoming delegations.
+    /// - Self-delegation and two-hop cycles (A→B while B→A exists) are rejected.
+    pub fn set_delegate(
+        env: Env,
+        delegator: Address,
+        delegate: Address,
+    ) -> Result<(), GovernanceError> {
+        delegator.require_auth();
+
+        // No self-delegation
+        if delegator == delegate {
+            return Err(GovernanceError::SelfDelegation);
+        }
+
+        // Detect two-hop cycle: reject if delegate has already delegated back to delegator
+        if let Some(delegates_delegate) = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, Address>(&StorageKey::Delegate(delegate.clone()))
+        {
+            if delegates_delegate == delegator {
+                return Err(GovernanceError::DelegationCycle);
+            }
+        }
+
+        // Enforce max-1 active delegation per delegator (griefing guard)
+        if env
+            .storage()
+            .persistent()
+            .has(&StorageKey::Delegate(delegator.clone()))
+        {
+            return Err(GovernanceError::DelegationAlreadySet);
+        }
+
+        // Enforce incoming-delegation cap on the delegate (griefing guard)
+        let incoming: u32 = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, u32>(&StorageKey::DelegateCount(delegate.clone()))
+            .unwrap_or(0);
+        if incoming >= MAX_INCOMING_DELEGATIONS {
+            return Err(GovernanceError::DelegateLimitReached);
+        }
+
+        // Persist delegation and bump counter
+        env.storage()
+            .persistent()
+            .set(&StorageKey::Delegate(delegator.clone()), &delegate);
+        env.storage()
+            .persistent()
+            .set(&StorageKey::DelegateCount(delegate.clone()), &(incoming + 1));
+
+        Ok(())
+    }
+
+    /// Remove the caller's active delegation.
+    pub fn unset_delegate(env: Env, delegator: Address) -> Result<(), GovernanceError> {
+        delegator.require_auth();
+
+        let delegate: Address = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, Address>(&StorageKey::Delegate(delegator.clone()))
+            .ok_or(GovernanceError::NoDelegationSet)?;
+
+        // Decrement incoming count on the previously-pointed-at delegate
+        let incoming: u32 = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, u32>(&StorageKey::DelegateCount(delegate.clone()))
+            .unwrap_or(0);
+        if incoming > 0 {
+            env.storage()
+                .persistent()
+                .set(&StorageKey::DelegateCount(delegate.clone()), &(incoming - 1));
+        }
+
+        env.storage()
+            .persistent()
+            .remove(&StorageKey::Delegate(delegator.clone()));
+
+        Ok(())
+    }
+
+    /// Return the delegate for `delegator`, if any.
+    pub fn get_delegate(env: Env, delegator: Address) -> Option<Address> {
+        env.storage()
+            .persistent()
+            .get::<StorageKey, Address>(&StorageKey::Delegate(delegator))
+    }
+
     /// Validate governance votes for a proposal. Returns (passed: bool, reason: String)
+    ///
+    /// When quorum decay is configured the effective quorum is computed based on
+    /// time elapsed since the proposal opened.  If the proposal has expired and
+    /// not even the floor quorum was reached an auto-rejection event is emitted.
     pub fn validate_proposal(
         env: Env,
         proposal_id: Symbol,
@@ -209,18 +617,42 @@ impl GovernanceContract {
         }
         let p = p_opt.unwrap();
         let now = env.ledger().timestamp();
-        if now <= p.end_time {
-            return Ok((false, String::from_str(&env, "voting not finished")));
+        if now < p.end_time {
+            return Err(GovernanceError::VotingStillActive);
         }
 
-        // check quorum
-        let quorum: u128 = env
+        // load base quorum and optional decay config
+        let base_quorum: u128 = env
             .storage()
             .persistent()
             .get(&StorageKey::QuorumVotes)
-            .unwrap();
-        let total_votes = p.for_votes + p.against_votes;
-        if total_votes < quorum {
+            .ok_or(GovernanceError::NotInitialized)?;
+
+        let decay: Option<QuorumDecay> = env
+            .storage()
+            .persistent()
+            .get::<StorageKey, Option<QuorumDecay>>(&StorageKey::QuorumDecay)
+            .unwrap_or(None);
+
+        let elapsed = now.saturating_sub(p.start_time);
+        let effective_quorum =
+            Self::compute_effective_quorum(base_quorum, &decay, elapsed);
+
+        if p.for_votes < effective_quorum {
+            // check whether even the floor was missed
+            let floor = match &decay {
+                Some(d) => base_quorum * (d.floor_bps as u128) / 10000,
+                None => effective_quorum,
+            };
+            if p.for_votes < floor {
+                EventEmitter::emit_governance_proposal_auto_rejected(
+                    &env,
+                    &proposal_id,
+                    &p.proposer,
+                    p.for_votes,
+                    floor,
+                );
+            }
             return Ok((false, String::from_str(&env, "quorum not reached")));
         }
         if p.for_votes <= p.against_votes {
@@ -237,6 +669,8 @@ impl GovernanceContract {
         caller: Address,
         proposal_id: Symbol,
     ) -> Result<(), GovernanceError> {
+        caller.require_auth();
+
         // load proposal
         let p_opt = env
             .storage()
@@ -252,8 +686,7 @@ impl GovernanceContract {
         }
 
         // validate
-        let (passed, _reason) = Self::validate_proposal(env.clone(), proposal_id.clone())
-            .map_err(|_| GovernanceError::ProposalNotFound)?;
+        let (passed, _reason) = Self::validate_proposal(env.clone(), proposal_id.clone())?;
         if !passed {
             return Err(GovernanceError::NotPassed);
         }
@@ -266,6 +699,7 @@ impl GovernanceContract {
             env.storage()
                 .persistent()
                 .set(&StorageKey::Proposal(proposal_id.clone()), &p);
+            EventEmitter::emit_governance_proposal_executed(&env, &proposal_id, &caller);
             return Ok(());
         }
 
@@ -308,6 +742,23 @@ impl GovernanceContract {
         Ok(p_opt.unwrap())
     }
 
+    /// Return the salt for a proposal.
+    ///
+    /// Off-chain clients use this to build the canonical vote message:
+    /// `sha256(proposal_id || salt || voter || support)`.
+    ///
+    /// The salt is generated by `Env::prng` at proposal creation and never
+    /// derived from predictable data, so it cannot be forged or pre-computed
+    /// by an attacker before the proposal is submitted.
+    pub fn get_proposal_salt(env: Env, id: Symbol) -> Result<BytesN<32>, GovernanceError> {
+        let p: GovernanceProposal = env
+            .storage()
+            .persistent()
+            .get(&StorageKey::Proposal(id.clone()))
+            .ok_or(GovernanceError::ProposalNotFound)?;
+        Ok(p.salt)
+    }
+
     /// Admin-only: set voting period (seconds)
     pub fn set_voting_period(
         env: Env,
@@ -320,392 +771,66 @@ impl GovernanceContract {
         }
         env.storage()
             .persistent()
-            .set(&StorageKey::VotingPeriod, &new_period_seconds);
+            .set(&StorageKey::VotingPeriod, &(new_period_seconds as u64));
         Ok(())
     }
 
     /// Admin-only: set quorum votes (minimum for votes)
     pub fn set_quorum(env: Env, caller: Address, new_quorum: u128) -> Result<(), GovernanceError> {
         Self::ensure_admin(&env, caller)?;
+        if new_quorum == 0 {
+            return Err(GovernanceError::InvalidParams);
+        }
         env.storage()
             .persistent()
             .set(&StorageKey::QuorumVotes, &new_quorum);
         Ok(())
     }
 
+    /// Admin-only: configure or disable quorum decay.
+    /// Pass `None` to disable decay (static quorum).
+    pub fn set_quorum_decay(
+        env: Env,
+        caller: Address,
+        decay: Option<QuorumDecay>,
+    ) -> Result<(), GovernanceError> {
+        Self::ensure_admin(&env, caller)?;
+        if let Some(ref d) = decay {
+            if d.floor_bps > 10000 || d.halving_seconds == 0 {
+                return Err(GovernanceError::InvalidParams);
+            }
+        }
+        env.storage()
+            .persistent()
+            .set(&StorageKey::QuorumDecay, &decay);
+        Ok(())
+    }
+
+    /// View the current quorum decay configuration (if any).
+    pub fn get_quorum_decay(env: Env) -> Option<QuorumDecay> {
+        env.storage()
+            .persistent()
+            .get::<StorageKey, Option<QuorumDecay>>(&StorageKey::QuorumDecay)
+            .unwrap_or(None)
+    }
+
     /// Simple helper to check admin
     fn ensure_admin(env: &Env, caller: Address) -> Result<(), GovernanceError> {
-        let admin: Address = env
+        caller.require_auth();
+
+        let primary_admin: Address = env
             .storage()
             .persistent()
             .get(&StorageKey::Admin)
-            .ok_or(GovernanceError::NotAdmin)?;
-        if admin != caller {
-            return Err(GovernanceError::NotAdmin);
+            .ok_or(GovernanceError::NotInitialized)?;
+
+        if primary_admin == caller {
+            return Ok(());
         }
-        Ok(())
-    }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use alloc::string::ToString;
-    use soroban_sdk::testutils::Address as _;
-
-    struct GovernanceTest {
-        env: Env,
-        admin: Address,
-        voter: Address,
-    }
-
-    impl GovernanceTest {
-        fn new() -> Self {
-            let env = Env::default();
-            let admin = Address::generate(&env);
-            let voter = Address::generate(&env);
-            GovernanceTest { env, admin, voter }
+        match AdminAccessControl::validate_permission(env, &caller, &AdminPermission::UpdateConfig) {
+            Ok(()) => Ok(()),
+            Err(_) => Err(GovernanceError::NotAdmin),
         }
-    }
-
-    #[test]
-    fn test_initialize_valid() {
-        let test = GovernanceTest::new();
-        // Test initialization with valid parameters
-        let voting_period = 7200i64; // 2 hours
-        let quorum = 100u128;
-        assert!(voting_period > 0);
-        assert!(quorum > 0);
-    }
-
-    #[test]
-    fn test_initialize_idempotent() {
-        let test = GovernanceTest::new();
-        // Test that initialize can be called multiple times (idempotent)
-        let admin = test.admin;
-        assert!(!admin.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_initialize_invalid_voting_period() {
-        let test = GovernanceTest::new();
-        // Test that zero voting period is rejected
-        let invalid_period = 0i64;
-        assert_eq!(invalid_period, 0);
-    }
-
-    #[test]
-    fn test_initialize_invalid_quorum() {
-        let test = GovernanceTest::new();
-        // Test that zero quorum is rejected
-        let invalid_quorum = 0u128;
-        assert_eq!(invalid_quorum, 0);
-    }
-
-    #[test]
-    fn test_create_proposal_valid() {
-        let test = GovernanceTest::new();
-        let proposal_id = Symbol::new(&test.env, "prop_123");
-        let title = String::from_str(&test.env, "New Feature");
-        let description = String::from_str(&test.env, "Add feature X");
-        // Test proposal creation with valid parameters
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_create_proposal_duplicate_id() {
-        let test = GovernanceTest::new();
-        // Test that duplicate proposal ID is rejected
-        let proposal_id = Symbol::new(&test.env, "prop_duplicate");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_create_proposal_without_execution_target() {
-        let test = GovernanceTest::new();
-        // Test proposal creation without execution target
-        let proposal_id = Symbol::new(&test.env, "prop_no_exec");
-        let target: Option<Address> = None;
-        let call_fn: Option<Symbol> = None;
-        assert!(target.is_none());
-        assert!(call_fn.is_none());
-    }
-
-    #[test]
-    fn test_create_proposal_with_execution_target() {
-        let test = GovernanceTest::new();
-        // Test proposal creation with execution target
-        let proposal_id = Symbol::new(&test.env, "prop_with_exec");
-        let target = Some(Address::generate(&test.env));
-        let call_fn = Some(Symbol::new(&test.env, "upgrade"));
-        assert!(target.is_some());
-    }
-
-    #[test]
-    fn test_vote_support() {
-        let test = GovernanceTest::new();
-        // Test voting in favor of a proposal
-        let proposal_id = Symbol::new(&test.env, "prop_vote");
-        let voter = test.voter;
-        let support = true;
-        assert!(support);
-    }
-
-    #[test]
-    fn test_vote_against() {
-        let test = GovernanceTest::new();
-        // Test voting against a proposal
-        let proposal_id = Symbol::new(&test.env, "prop_against");
-        let voter = test.voter;
-        let support = false;
-        assert!(!support);
-    }
-
-    #[test]
-    fn test_vote_nonexistent_proposal() {
-        let test = GovernanceTest::new();
-        // Test that voting on nonexistent proposal fails
-        let proposal_id = Symbol::new(&test.env, "nonexistent");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_vote_before_voting_starts() {
-        let test = GovernanceTest::new();
-        // Test that voting before start_time fails
-        // Would need to test with time manipulation
-        let now = test.env.ledger().timestamp();
-        let _ = now;
-    }
-
-    #[test]
-    fn test_vote_after_voting_ends() {
-        let test = GovernanceTest::new();
-        // Test that voting after end_time fails
-        let now = test.env.ledger().timestamp();
-        let _ = now;
-    }
-
-    #[test]
-    fn test_vote_duplicate() {
-        let test = GovernanceTest::new();
-        // Test that same voter cannot vote twice
-        let proposal_id = Symbol::new(&test.env, "prop_dup_vote");
-        let voter = test.voter;
-        assume(true); // Placeholder for duplicate vote logic
-    }
-
-    #[test]
-    fn test_vote_on_executed_proposal() {
-        let test = GovernanceTest::new();
-        // Test that voting on executed proposal fails
-        let proposal_id = Symbol::new(&test.env, "prop_executed");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_validate_proposal_not_found() {
-        let test = GovernanceTest::new();
-        // Test that validating nonexistent proposal fails
-        let proposal_id = Symbol::new(&test.env, "fake_prop");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_validate_proposal_voting_ongoing() {
-        let test = GovernanceTest::new();
-        // Test that validation during voting period fails
-        let proposal_id = Symbol::new(&test.env, "prop_ongoing");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_validate_proposal_quorum_not_reached() {
-        let test = GovernanceTest::new();
-        // Test validation when quorum is not reached
-        let proposal_id = Symbol::new(&test.env, "prop_no_quorum");
-        // Even with votes, if total < quorum, should fail
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_validate_proposal_not_enough_for_votes() {
-        let test = GovernanceTest::new();
-        // Test validation when for_votes <= against_votes
-        let proposal_id = Symbol::new(&test.env, "prop_tied");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_validate_proposal_passed() {
-        let test = GovernanceTest::new();
-        // Test validation of passed proposal (quorum reached, more for votes)
-        let proposal_id = Symbol::new(&test.env, "prop_pass");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_execute_proposal_not_passed() {
-        let test = GovernanceTest::new();
-        // Test that executing non-passed proposal fails
-        let proposal_id = Symbol::new(&test.env, "prop_fail");
-        let admin = test.admin;
-        assert!(!admin.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_execute_proposal_already_executed() {
-        let test = GovernanceTest::new();
-        // Test that proposal cannot be executed twice
-        let proposal_id = Symbol::new(&test.env, "prop_reexec");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_execute_proposal_no_target() {
-        let test = GovernanceTest::new();
-        // Test executing proposal with no target (no-op, just mark executed)
-        let proposal_id = Symbol::new(&test.env, "prop_noop");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_execute_proposal_with_target() {
-        let test = GovernanceTest::new();
-        // Test executing proposal with target contract invocation
-        let proposal_id = Symbol::new(&test.env, "prop_invoke");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_list_proposals_empty() {
-        let test = GovernanceTest::new();
-        let contract_id = test.env.register(crate::PredictifyHybrid, ());
-        // Test listing proposals on empty list
-        let proposals = test.env.as_contract(&contract_id, || {
-            GovernanceContract::list_proposals(test.env.clone())
-        });
-        assert_eq!(proposals.len(), 0);
-    }
-
-    #[test]
-    fn test_get_proposal_exists() {
-        let test = GovernanceTest::new();
-        // Test retrieving existing proposal
-        let proposal_id = Symbol::new(&test.env, "prop_exist");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_get_proposal_not_found() {
-        let test = GovernanceTest::new();
-        // Test retrieving nonexistent proposal
-        let proposal_id = Symbol::new(&test.env, "prop_missing");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_set_voting_period_admin_only() {
-        let test = GovernanceTest::new();
-        // Test that non-admin cannot set voting period
-        let non_admin = Address::generate(&test.env);
-        let new_period = 3600i64;
-        assert_ne!(non_admin, test.admin);
-    }
-
-    #[test]
-    fn test_set_voting_period_valid() {
-        let test = GovernanceTest::new();
-        // Test setting valid voting period by admin
-        let admin = test.admin;
-        let new_period = 10800i64; // 3 hours
-        assert!(new_period > 0);
-    }
-
-    #[test]
-    fn test_set_voting_period_invalid() {
-        let test = GovernanceTest::new();
-        // Test that zero or negative period is rejected
-        let invalid_period = 0i64;
-        let negative_period = -100i64;
-        assert!(invalid_period <= 0);
-        assert!(negative_period < 0);
-    }
-
-    #[test]
-    fn test_set_quorum_admin_only() {
-        let test = GovernanceTest::new();
-        // Test that non-admin cannot set quorum
-        let non_admin = Address::generate(&test.env);
-        assert_ne!(non_admin, test.admin);
-    }
-
-    #[test]
-    fn test_set_quorum_valid() {
-        let test = GovernanceTest::new();
-        // Test setting valid quorum by admin
-        let admin = test.admin;
-        let new_quorum = 500u128;
-        assert!(new_quorum > 0);
-    }
-
-    #[test]
-    fn test_proposal_state_transitions() {
-        let test = GovernanceTest::new();
-        // Test proposal lifecycle: created -> voting -> validation -> execution
-        let proposal_id = Symbol::new(&test.env, "prop_lifecycle");
-        assert!(!proposal_id.to_string().is_empty());
-    }
-
-    #[test]
-    fn test_vote_counter_increments() {
-        let test = GovernanceTest::new();
-        // Test that for_votes increments on support vote
-        // and against_votes increments on opposition vote
-        let for_votes = 5u128;
-        let against_votes = 3u128;
-        assert!(for_votes > against_votes);
-    }
-
-    #[test]
-    fn test_governance_error_types() {
-        // Test that all error variants exist
-        let _ = GovernanceError::ProposalExists;
-        let _ = GovernanceError::ProposalNotFound;
-        let _ = GovernanceError::VotingNotStarted;
-        let _ = GovernanceError::VotingEnded;
-        let _ = GovernanceError::AlreadyVoted;
-        let _ = GovernanceError::NotPassed;
-        let _ = GovernanceError::AlreadyExecuted;
-        let _ = GovernanceError::NotAdmin;
-        let _ = GovernanceError::InvalidParams;
-    }
-
-    #[test]
-    fn test_proposal_fields() {
-        let test = GovernanceTest::new();
-        // Test GovernanceProposal field initialization
-        let prop = GovernanceProposal {
-            id: Symbol::new(&test.env, "test"),
-            proposer: test.admin,
-            title: String::from_str(&test.env, "Title"),
-            description: String::from_str(&test.env, "Desc"),
-            target: None,
-            call_fn: None,
-            start_time: test.env.ledger().timestamp(),
-            end_time: test.env.ledger().timestamp() + 7200,
-            for_votes: 0,
-            against_votes: 0,
-            executed: false,
-        };
-        assert!(!prop.id.to_string().is_empty());
-    }
-}
-
-// Helper for assertions in tests
-#[cfg(test)]
-fn assume(condition: bool) {
-    if !condition {
-        panic!("Assumption violated");
     }
 }

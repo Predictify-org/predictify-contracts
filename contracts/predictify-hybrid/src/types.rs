@@ -1,8 +1,153 @@
 #![allow(dead_code)]
 
+use crate::Error;
+use crate::timelock::MarketTimelockConfig;
 use alloc::string::String as StdString;
 use alloc::string::ToString;
-use soroban_sdk::{contracttype, Address, Env, Map, String, Symbol, Vec};
+use soroban_sdk::{contracttype, xdr::ToXdr, Address, BytesN, Env, Map, String, Symbol, Vec};
+
+// ===== STORAGE TIER AUDIT TRAIL =====
+
+/// Explicit storage tier used for persistent market/event data.
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StorageTier {
+    /// Lives with the contract instance.
+    Instance,
+    /// Long-lived data with an explicit TTL.
+    Persistent,
+    /// Short-lived data with a deterministic expiry.
+    Temporary,
+}
+
+/// One auditable storage-tier transition.
+///
+/// Invariant: callers must persist this record in the same ledger as the tier
+/// transition it describes. The commitment detects partial writes or in-place
+/// mutation after the fact.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageTierChange {
+    /// Storage key whose tier changed.
+    pub key: String,
+    /// Tier before the change.
+    pub from_tier: StorageTier,
+    /// Tier after the change.
+    pub to_tier: StorageTier,
+    /// Address that authorized the change.
+    pub operator: Address,
+    /// Ledger timestamp when the change was recorded.
+    pub timestamp: u64,
+    /// Ledger sequence when the change was recorded.
+    pub ledger_seq: u32,
+    /// Retention/TTL in seconds for the new tier.
+    pub ttl_seconds: u64,
+    /// SHA-256 commitment over the canonical XDR payload.
+    pub commitment: BytesN<32>,
+}
+
+/// Canonical payload for `StorageTierChange::commitment`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageTierChangeCommitmentPayload {
+    pub key: String,
+    pub from_tier: StorageTier,
+    pub to_tier: StorageTier,
+    pub operator: Address,
+    pub timestamp: u64,
+    pub ledger_seq: u32,
+    pub ttl_seconds: u64,
+}
+
+impl StorageTierChange {
+    /// Creates a storage-tier-change audit record with an integrity commitment.
+    pub fn new(
+        env: &Env,
+        key: String,
+        from_tier: StorageTier,
+        to_tier: StorageTier,
+        operator: Address,
+        ttl_seconds: u64,
+    ) -> Self {
+        let timestamp = env.ledger().timestamp();
+        let ledger_seq = env.ledger().sequence();
+        let payload = StorageTierChangeCommitmentPayload {
+            key: key.clone(),
+            from_tier,
+            to_tier,
+            operator: operator.clone(),
+            timestamp,
+            ledger_seq,
+            ttl_seconds,
+        };
+        let commitment = env.crypto().sha256(&payload.to_xdr(env)).into();
+        Self {
+            key,
+            from_tier,
+            to_tier,
+            operator,
+            timestamp,
+            ledger_seq,
+            ttl_seconds,
+            commitment,
+        }
+    }
+
+    /// Verifies that the commitment matches the current fields.
+    pub fn verify(&self, env: &Env) -> bool {
+        let payload = StorageTierChangeCommitmentPayload {
+            key: self.key.clone(),
+            from_tier: self.from_tier,
+            to_tier: self.to_tier,
+            operator: self.operator.clone(),
+            timestamp: self.timestamp,
+            ledger_seq: self.ledger_seq,
+            ttl_seconds: self.ttl_seconds,
+        };
+        let expected: BytesN<32> = env.crypto().sha256(&payload.to_xdr(env)).into();
+        expected.eq(&self.commitment)
+    }
+}
+
+#[cfg(test)]
+mod storage_tier_tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as _;
+
+    #[test]
+    fn storage_tier_change_records_and_verifies_commitment() {
+        let env = Env::default();
+        let operator = Address::generate(&env);
+        let key = String::from_str(&env, "market:1");
+        let change = StorageTierChange::new(
+            &env,
+            key.clone(),
+            StorageTier::Instance,
+            StorageTier::Persistent,
+            operator,
+            31 * 24 * 60 * 60,
+        );
+        assert_eq!(change.from_tier, StorageTier::Instance);
+        assert_eq!(change.to_tier, StorageTier::Persistent);
+        assert_eq!(change.ttl_seconds, 31 * 24 * 60 * 60);
+        assert!(change.verify(&env));
+
+        let mut forged = change.clone();
+        forged.ttl_seconds += 1;
+        assert!(!forged.verify(&env));
+    }
+
+// ===== PAYOUT REMAINDER =====
+
+/// Tracks the undistributed remainder from payout calculations.
+/// This ensures that integer division does not cause silent loss of funds.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PayoutRemainder {
+    pub amount: i128,
+    pub claimed: bool,
+}
+}
 
 // ===== MARKET STATE =====
 
@@ -139,6 +284,14 @@ pub enum MarketState {
     Closed,
     /// Market has been cancelled
     Cancelled,
+    /// Market has been archived (immutable, read-only state)
+    /// Archive only allowed from Resolved or Cancelled states.
+    /// Once archived, market cannot be modified, only queried or permanently deleted via pruning.
+    Archived,
+    /// Market has been restored from archive (optional state for future restore functionality)
+    /// Restore only allowed from Archived state.
+    /// Restored markets may be transitioned back to Active or other eligible states.
+    Restored,
 }
 
 // ===== ORACLE TYPES =====
@@ -430,6 +583,21 @@ impl OracleProvider {
                 String::from_str(&env, "Unknown Provider")
             }
         }
+    }
+
+    /// Like [`Self::name`], but builds the string in the caller's `Env`.
+    ///
+    /// `name()` allocates in a throwaway `Env`, so its result cannot be placed in
+    /// storage or events of a live environment; use this variant there.
+    pub fn name_in(&self, env: &soroban_sdk::Env) -> String {
+        let label = match self.as_str() {
+            "reflector" => "Reflector",
+            "pyth" => "Pyth Network",
+            "band_protocol" => "Band Protocol",
+            "dia" => "DIA",
+            _ => "Unknown Provider",
+        };
+        String::from_str(env, label)
     }
 
     /// Checks if this oracle provider is known to the current contract version.
@@ -775,22 +943,20 @@ impl OracleConfig {
 impl OracleConfig {
     /// Validate the oracle configuration
     pub fn validate(&self, env: &Env) -> Result<(), crate::Error> {
+        // Reject empty/sentinel config
         if self.is_none_sentinel() || self.feed_id.is_empty() {
             return Err(crate::Error::InvalidOracleConfig);
         }
 
-        // Validate feed ID length
         crate::metadata_limits::validate_feed_id_length(&self.feed_id)?;
-
-        // Validate comparison length
         crate::metadata_limits::validate_comparison_length(&self.comparison)?;
 
-        // Validate threshold
+        // Threshold must be positive
         if self.threshold <= 0 {
             return Err(crate::Error::InvalidThreshold);
         }
 
-        // Validate comparison operator
+        // Only allow gt / lt / eq
         if self.comparison != String::from_str(env, "gt")
             && self.comparison != String::from_str(env, "lt")
             && self.comparison != String::from_str(env, "eq")
@@ -798,10 +964,38 @@ impl OracleConfig {
             return Err(crate::Error::InvalidComparison);
         }
 
+        // Reject impossible combinations per provider
+        let provider_str = self.provider.as_str();
+        let feed_id_len = self.feed_id.len();
+
+        if provider_str == "reflector" {
+            // Reflector uses short asset symbols like "BTC/USD" or "XLM"
+            // Hex strings of 64+ chars are Pyth feeds and impossible for Reflector
+            if feed_id_len >= 64 {
+                return Err(crate::Error::InvalidOracleConfig);
+            }
+        } else if provider_str == "pyth" {
+            // Pyth uses 64-char hex strings (sometimes 66 with 0x)
+            if feed_id_len < 64 || feed_id_len > 66 {
+                return Err(crate::Error::InvalidOracleConfig);
+            }
+        } else if provider_str == "band_protocol" || provider_str == "dia" {
+            if feed_id_len >= 64 {
+                return Err(crate::Error::InvalidOracleConfig);
+            }
+        }
+
         // Validate provider is supported using new validation method
         self.provider.validate_for_market(env)?;
 
         Ok(())
+    }
+
+    /// Returns `true` if this oracle configuration is active and valid.
+    ///
+    /// An oracle is considered active if it's not the none sentinel.
+    pub fn is_active(&self) -> bool {
+        !self.is_none_sentinel() && !self.feed_id.is_empty()
     }
 }
 
@@ -1004,14 +1198,27 @@ pub struct Market {
     pub end_time: u64,
     /// Oracle configuration for this market (primary)
     pub oracle_config: OracleConfig,
-    /// Whether a fallback oracle is configured (avoids Option in contract type for SDK compatibility)
+    /// SHA-256 commitment to the canonical public market metadata.
+    ///
+    /// The committed fields are `question`, `outcomes`, and the primary
+    /// `oracle_config`, encoded with Soroban's canonical XDR serializer before
+    /// hashing. Clients can recompute this value off-chain and call
+    /// `verify_market_metadata` to detect tampered storage reads or stale caches.
+    pub metadata_commitment: BytesN<32>,
+    /// Whether a fallback oracle is configured.
+    ///
+    /// When `true`, automatic resolution attempts the primary oracle once and then this market's
+    /// fallback oracle once if the primary attempt fails.
     pub has_fallback: bool,
     /// Fallback oracle configuration.
     ///
     /// When `has_fallback` is `false`, this field is populated with `OracleConfig::none_sentinel()`
     /// so the stored representation stays collision-free without using `Option<OracleConfig>`.
+    /// When `has_fallback` is `true`, this config is consulted only after one failed primary attempt.
     pub fallback_oracle_config: OracleConfig,
-    /// Resolution timeout in seconds after end_time
+    /// Resolution timeout in seconds after `end_time`.
+    ///
+    /// Automatic oracle resolution stops once `ledger.timestamp() >= end_time + resolution_timeout`.
     pub resolution_timeout: u64,
     /// Oracle result (set after market ends)
     pub oracle_result: Option<String>,
@@ -1042,10 +1249,13 @@ pub struct Market {
     /// Extension history
     pub extension_history: Vec<MarketExtension>,
 
-    /// Optional category for the event (e.g., "sports", "crypto", "politics")
-    /// Used for filtering and display in client applications
+    /// Optional category for the event (e.g., "sports", "crypto", "politics").
+    ///
+    /// When set, the string must respect configured min/max length (see `config` and `metadata_limits`); `None` means
+    /// unset. `Some` with an empty string is invalid.
     pub category: Option<String>,
-    /// List of searchable tags for filtering events by multiple dimensions
+    /// Searchable tags for filtering: bounded list length, per-tag length, and no duplicates (enforced in
+    /// `metadata_limits::validate_event_tags` and `Market::validate`).
     pub tags: Vec<String>,
     /// Minimum total pool size required for resolution (None = no minimum)
     pub min_pool_size: Option<i128>,
@@ -1053,6 +1263,28 @@ pub struct Market {
     pub bet_deadline: u64,
     /// Dispute window in seconds after end_time. Payouts allowed only after end_time + this period (or dispute resolved).
     pub dispute_window_seconds: u64,
+    /// Whether unclaimed winnings have already been swept for this market.
+    /// Set to true after the first successful sweep to prevent double-crediting the treasury.
+    pub winnings_swept: bool,
+    /// Per-market timelock configuration for admin actions.
+    pub timelock_config: MarketTimelockConfig,
+    /// Per-market dispute stake floor (None = use global/default minimum)
+    pub dispute_stake_floor: Option<i128>,
+    /// Maximum number of unique participants allowed (None = no limit).
+    pub max_participants: Option<u32>,
+}
+
+/// Canonical payload committed by `Market::metadata_commitment`.
+///
+/// Keep this type small and purpose-built so commitment review is simple. The
+/// field order is part of the commitment definition; changing it requires a
+/// documented migration/versioning plan for clients.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketMetadataCommitmentPayload {
+    pub question: String,
+    pub outcomes: Vec<String>,
+    pub oracle_config: OracleConfig,
 }
 
 // ===== CLAIM INFO =====
@@ -1108,24 +1340,29 @@ pub struct ClaimInfo {
     pub timestamp: u64,
     /// The exact amount of tokens claimed (for verification and audits)
     pub payout_amount: i128,
+    /// Unique claim nonce for replay protection. Incremented on each successful claim.
+    /// Prevents transaction replays by making each claim operation unique.
+    pub claim_nonce: u64,
 }
 
 impl ClaimInfo {
-    /// Create a new ClaimInfo instance with the given payout amount.
+    /// Create a new ClaimInfo instance with the given payout amount and nonce.
     ///
     /// # Parameters
     ///
     /// - `env` - The Soroban environment (used for timestamp)
     /// - `payout_amount` - The amount being claimed
+    /// - `claim_nonce` - The unique nonce for this claim (incremented on success)
     ///
     /// # Returns
     ///
-    /// Returns a new ClaimInfo with current timestamp and specified payout.
-    pub fn new(env: &Env, payout_amount: i128) -> Self {
+    /// Returns a new ClaimInfo with current timestamp, specified payout, and nonce.
+    pub fn new(env: &Env, payout_amount: i128, claim_nonce: u64) -> Self {
         Self {
             claimed: true,
             timestamp: env.ledger().timestamp(),
             payout_amount,
+            claim_nonce,
         }
     }
 
@@ -1139,6 +1376,7 @@ impl ClaimInfo {
             claimed: false,
             timestamp: 0,
             payout_amount: 0,
+            claim_nonce: 0,
         }
     }
 
@@ -1167,6 +1405,15 @@ impl ClaimInfo {
     /// Returns the exact token amount claimed (in stroops/smallest unit).
     pub fn get_payout(&self) -> i128 {
         self.payout_amount
+    }
+
+    /// Get the claim nonce for replay protection.
+    ///
+    /// # Returns
+    ///
+    /// Returns the unique nonce associated with this claim.
+    pub fn get_nonce(&self) -> u64 {
+        self.claim_nonce
     }
 }
 
@@ -1372,6 +1619,53 @@ pub struct DashboardStatisticsV1 {
 }
 
 impl Market {
+    /// Computes the SHA-256 commitment for canonical market metadata.
+    ///
+    /// The commitment covers only public creation metadata that off-chain UIs
+    /// display as market identity: `question`, `outcomes`, and primary
+    /// `oracle_config`. The payload is serialized with Soroban's canonical XDR
+    /// representation before hashing, avoiding ambiguous delimiters or host-side
+    /// formatting differences.
+    pub fn compute_metadata_commitment(
+        env: &Env,
+        question: &String,
+        outcomes: &Vec<String>,
+        oracle_config: &OracleConfig,
+    ) -> BytesN<32> {
+        let payload = MarketMetadataCommitmentPayload {
+            question: question.clone(),
+            outcomes: outcomes.clone(),
+            oracle_config: oracle_config.clone(),
+        };
+        env.crypto().sha256(&payload.to_xdr(env)).into()
+    }
+
+    /// Recomputes and stores this market's metadata commitment after an
+    /// authorized metadata update.
+    pub fn refresh_metadata_commitment(&mut self, env: &Env) {
+        self.metadata_commitment = Self::compute_metadata_commitment(
+            env,
+            &self.question,
+            &self.outcomes,
+            &self.oracle_config,
+        );
+    }
+
+    /// Verifies that `expected` matches both the stored commitment and a fresh
+    /// commitment over the currently stored fields.
+    ///
+    /// Comparing against a fresh commitment means the helper returns `false` if
+    /// any committed field was mutated without also updating the commitment.
+    pub fn verify_metadata_commitment(&self, env: &Env, expected: &BytesN<32>) -> bool {
+        let actual = Self::compute_metadata_commitment(
+            env,
+            &self.question,
+            &self.outcomes,
+            &self.oracle_config,
+        );
+        actual.eq(expected) && self.metadata_commitment.eq(expected)
+    }
+
     /// Create a new market
     pub fn new(
         env: &Env,
@@ -1388,12 +1682,19 @@ impl Market {
             Some(c) => (true, c.clone()),
             None => (false, OracleConfig::none_sentinel(env)),
         };
+        let metadata_commitment = Self::compute_metadata_commitment(
+            env,
+            &question,
+            &outcomes,
+            &oracle_config,
+        );
         Self {
             admin,
             question,
             outcomes,
             end_time,
             oracle_config,
+            metadata_commitment,
             has_fallback,
             fallback_oracle_config: fallback_cfg,
             resolution_timeout,
@@ -1416,6 +1717,10 @@ impl Market {
             min_pool_size: None,
             bet_deadline: 0,
             dispute_window_seconds: 86400, // 24h default
+            winnings_swept: false,
+            timelock_config: MarketTimelockConfig::default(),
+            dispute_stake_floor: None,
+            max_participants: None,
         }
     }
 
@@ -1490,9 +1795,16 @@ impl Market {
         // Validate each outcome length
         crate::metadata_limits::validate_outcomes_length(&self.outcomes)?;
 
-        // Validate oracle config
+        // Validate primary oracle config
+        // Validate primary oracle config
         self.oracle_config.validate(env)?;
-        if self.has_fallback {
+
+        // FIX: only validate fallback if it's actually provided (not sentinel)
+        if self.has_fallback && !self.fallback_oracle_config.is_none_sentinel() {
+            if self.fallback_oracle_config.feed_id.is_empty() {
+                return Err(crate::Error::InvalidOracleConfig);
+            }
+
             self.fallback_oracle_config.validate(env)?;
         }
 
@@ -1500,15 +1812,9 @@ impl Market {
         if self.end_time <= env.ledger().timestamp() {
             return Err(crate::Error::InvalidDuration);
         }
-
-        // Validate category if present
-        if let Some(ref category) = self.category {
-            crate::metadata_limits::validate_category_length(category)?;
-        }
-
-        // Validate tags
-        crate::metadata_limits::validate_tags_count(&self.tags)?;
-        crate::metadata_limits::validate_tags_length(&self.tags)?;
+        // Optional category and tags: size limits and duplicate-tag rejection (see metadata_limits)
+        crate::metadata_limits::validate_option_category_metadata(&self.category)?;
+        crate::metadata_limits::validate_event_tags(&self.tags)?;
 
         Ok(())
     }
@@ -1791,6 +2097,7 @@ impl OracleResult {
 ///
 /// This structure captures the minimum data needed for staleness and
 /// confidence interval validation without provider-specific dependencies.
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OraclePriceData {
     /// Price value in oracle base units
@@ -1807,20 +2114,24 @@ pub struct OraclePriceData {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GlobalOracleValidationConfig {
-    /// Maximum age of oracle data in seconds before it is rejected
     pub max_staleness_secs: u64,
-    /// Maximum allowed confidence interval in basis points (1/100 of a percent)
     pub max_confidence_bps: u32,
+    pub max_deviation_bps: Option<u32>,
+    pub max_deviation_z_multiple: Option<u32>,
+    pub history_size: Option<u32>,
+    pub auto_pause_duration_secs: Option<u64>,
 }
 
 /// Per-event oracle validation configuration override.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EventOracleValidationConfig {
-    /// Maximum age of oracle data in seconds before it is rejected
     pub max_staleness_secs: u64,
-    /// Maximum allowed confidence interval in basis points (1/100 of a percent)
     pub max_confidence_bps: u32,
+    pub max_deviation_bps: Option<u32>,
+    pub max_deviation_z_multiple: Option<u32>,
+    pub history_size: Option<u32>,
+    pub auto_pause_duration_secs: Option<u64>,
 }
 
 /// Multi-oracle aggregated result for consensus-based verification.
@@ -1869,6 +2180,84 @@ impl MultiOracleResult {
     pub fn has_consensus(&self) -> bool {
         self.consensus_reached && self.agreement_percentage >= self.consensus_threshold
     }
+}
+
+// ── Median Oracle Aggregation Types ─────────────────────────────────────────
+
+/// A single oracle's price quote produced by
+/// `OracleResolutionManager::resolve_with_median`.
+///
+/// One `OracleQuote` is collected from each of Pyth, Reflector, and Band.
+/// The `included` flag is `false` either because the oracle fetch failed
+/// or because the reported price was rejected as an outlier by the
+/// configured `max_deviation_bps` threshold.
+///
+/// # Confidence Weight Derivation
+///
+/// When the oracle reports a confidence interval `c` for a price `p`, the
+/// weight is computed as:
+/// ```text
+/// weight_bps = p × 10 000 / (p + c)
+/// ```
+/// A tighter interval (lower `c`) raises the weight toward 10 000.  When
+/// no interval is reported, a medium weight of 5 000 bps is used.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OracleQuote {
+    /// Oracle provider (Pyth, Reflector, or Band Protocol).
+    pub provider: OracleProvider,
+    /// Raw price from the oracle feed, in market base units.
+    /// Zero when `included` is `false`.
+    pub price: i128,
+    /// Confidence interval expressed as a fraction of `price` in basis
+    /// points (100 bps = 1 %).  Zero indicates the oracle did not report
+    /// a confidence interval; a larger value means higher price uncertainty.
+    pub confidence_bps: u32,
+    /// Influence weight for the weighted-median computation, in basis
+    /// points (10 000 = full weight).  Derived from the confidence
+    /// interval: tighter intervals yield higher weights.  Zero for
+    /// excluded quotes.
+    pub weight_bps: u32,
+    /// `true` when this quote participates in the final median computation.
+    /// `false` for failed fetches or outliers that exceed
+    /// `MedianOracleConfig::max_deviation_bps`.
+    pub included: bool,
+}
+
+/// Global configuration for the three-oracle median resolver.
+///
+/// Stored once by the contract admin via
+/// `OracleResolutionManager::set_median_config` and referenced by every
+/// subsequent call to `OracleResolutionManager::resolve_with_median`.
+///
+/// # Outlier Detection
+///
+/// After all three feeds are queried, an unweighted simple median is
+/// computed.  Any quote whose price satisfies
+/// ```text
+/// |price − simple_median| × 10 000 / simple_median > max_deviation_bps
+/// ```
+/// is discarded before the final weighted-median computation.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MedianOracleConfig {
+    /// Contract address of the Pyth price oracle.
+    /// On Stellar this oracle returns `OracleUnavailable`; the quote will
+    /// be excluded with `included = false`.
+    pub pyth_address: Address,
+    /// Contract address of the Reflector oracle (primary on Stellar).
+    pub reflector_address: Address,
+    /// Contract address of the Band Protocol oracle.
+    pub band_address: Address,
+    /// Maximum price deviation allowed before a quote is rejected as an
+    /// outlier, in basis points (1 bps = 0.01 %).
+    /// Recommended default: 200 (2 %).
+    pub max_deviation_bps: u32,
+    /// Minimum number of non-outlier quotes required for a valid
+    /// resolution.  `resolve_with_median` returns `OracleNoConsensus`
+    /// when fewer quotes survive filtering.  Must be ≥ 1;
+    /// recommended value: 2.
+    pub min_sources: u32,
 }
 
 /// Oracle source configuration for multi-oracle support.
@@ -2135,7 +2524,7 @@ pub enum OracleVerificationStatus {
 /// } else {
 ///     let age = env.ledger().timestamp() - price_data.timestamp;
 ///     println!("Price data is {} seconds old", age);
-///     
+///
 ///     if age > 3600 { // 1 hour
 ///         println!("Data is very stale - reject for resolution");
 ///     }
@@ -2528,7 +2917,7 @@ impl MarketExtension {
 /// for (month, trend_data) in monthly_trends {
 ///     println!("Month {}: {} extensions, {:.1}% approval rate",
 ///         month, trend_data.count, trend_data.approval_rate);
-///     
+///
 ///     if trend_data.count > trend_data.previous_month_count {
 ///         println!("  ↗ Extension requests increasing");
 ///     } else {
@@ -2944,6 +3333,8 @@ pub struct MarketCreationParams {
     pub oracle_config: OracleConfig,
     /// Creation fee amount
     pub creation_fee: i128,
+    /// Per-market dispute stake floor (None = use global/default minimum)
+    pub dispute_stake_floor: Option<i128>,
 }
 
 impl MarketCreationParams {
@@ -2955,6 +3346,7 @@ impl MarketCreationParams {
         duration_days: u32,
         oracle_config: OracleConfig,
         creation_fee: i128,
+        dispute_stake_floor: Option<i128>,
     ) -> Self {
         Self {
             admin,
@@ -2963,6 +3355,7 @@ impl MarketCreationParams {
             duration_days,
             oracle_config,
             creation_fee,
+            dispute_stake_floor,
         }
     }
 }
@@ -3184,10 +3577,10 @@ impl MarketCreationParams {
 /// if consensus.is_reliable() {
 ///     let resolution_outcome = consensus.outcome.clone();
 ///     let confidence_score = consensus.calculate_confidence();
-///     
+///
 ///     println!("Resolving market to: {}", resolution_outcome);
 ///     println!("Confidence: {:.1}%", confidence_score);
-///     
+///
 ///     // Apply resolution
 ///     apply_market_resolution(resolution_outcome, confidence_score);
 /// } else {
@@ -3300,6 +3693,9 @@ impl MarketStatus {
             MarketState::Resolved => MarketStatus::Resolved,
             MarketState::Closed => MarketStatus::Closed,
             MarketState::Cancelled => MarketStatus::Cancelled,
+            // Archived/Restored are legacy state markers under the metadata-only
+            // archive model; expose them as the terminal Closed status.
+            MarketState::Archived | MarketState::Restored => MarketStatus::Closed,
         }
     }
 }
@@ -3739,14 +4135,20 @@ pub struct Event {
     pub end_time: u64,
     /// Oracle configuration for result verification (primary)
     pub oracle_config: OracleConfig,
-    /// Whether a fallback oracle is configured
+    /// Whether a fallback oracle is configured.
+    ///
+    /// When `true`, automatic resolution attempts the primary oracle once and then this event's
+    /// fallback oracle once if the primary attempt fails.
     pub has_fallback: bool,
     /// Fallback oracle configuration.
     ///
     /// When `has_fallback` is `false`, this field is populated with `OracleConfig::none_sentinel()`
     /// so the stored representation stays collision-free without using `Option<OracleConfig>`.
+    /// When `has_fallback` is `true`, this config is consulted only after one failed primary attempt.
     pub fallback_oracle_config: OracleConfig,
-    /// Resolution timeout in seconds after end_time
+    /// Resolution timeout in seconds after `end_time`.
+    ///
+    /// Automatic oracle resolution stops once `ledger.timestamp() >= end_time + resolution_timeout`.
     pub resolution_timeout: u64,
     /// Administrative address that created/manages the event
     pub admin: Address,
@@ -3832,7 +4234,7 @@ impl ReflectorAsset {
             ReflectorAsset::Other(symbol) => String::from_str(
                 &env,
                 &alloc::format!("{}/USD", Self::custom_symbol_to_host_string(symbol)),
-            )
+            ),
         }
     }
 
@@ -3852,7 +4254,8 @@ impl ReflectorAsset {
     /// Validates the asset for use in market creation
     pub fn validate_for_market(&self, _env: &soroban_sdk::Env) -> Result<(), crate::Error> {
         if !self.is_supported() {
-            return Err(crate::Error::InvalidOracleConfig);
+            // Allow unknown providers ONLY if fallback is disabled
+            return Err(Error::InvalidOracleConfig);
         }
         Ok(())
     }

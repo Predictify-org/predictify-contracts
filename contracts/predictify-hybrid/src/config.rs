@@ -1,7 +1,7 @@
 extern crate alloc;
 use soroban_sdk::{contracttype, Address, Env, String, Symbol};
 
-use crate::errors::Error;
+use crate::err::Error;
 
 /// Configuration management system for Predictify Hybrid contract
 ///
@@ -42,7 +42,7 @@ use crate::errors::Error;
 ///
 /// Rationale: Used as denominator for fee percentage calculations.
 /// Represented as basis points * 100 for precision (e.g., 250 = 2.5%).
-pub const PERCENTAGE_DENOMINATOR: i128 = 100;
+pub const PERCENTAGE_DENOMINATOR: i128 = 10000;
 
 /// Maximum market duration in days (365)
 ///
@@ -149,6 +149,16 @@ pub const MAX_TAG_LENGTH: u32 = 50;
 /// Safe range: 1-5 chars. Below 1 is invalid.
 pub const MIN_TAG_LENGTH: u32 = 2;
 
+/// Gas tracking ring buffer size (10)
+///
+/// Rationale: 10 entries provides sufficient history for moving average
+/// calculations while keeping storage overhead minimal. This allows
+/// detection of trends without excessive storage.
+///
+/// Safe range: 5-50 entries. Below 5 provides insufficient history.
+/// Above 50 increases storage costs without meaningful benefit.
+pub const GAS_TRACKING_WINDOW_SIZE: u32 = 10;
+
 /// Maximum number of tags per market (10)
 ///
 /// Rationale: 10 tags provides adequate categorization without
@@ -212,10 +222,10 @@ pub const MIN_CATEGORY_LENGTH: u32 = 2;
 ///   - Development: 2% (relaxed for testing)
 ///   - Testnet: 2% (mirrors production)
 ///   - Mainnet: 3% (higher for sustainability with real value)
-/// 
+///
 /// Basis Points: Fee percentages are stored and calculated in basis points (1/100th of 1%)
 /// where 100 basis points = 1%. This provides precise control over small percentages.
-/// 
+///
 /// Rounding: All fee calculations use integer division which truncates towards zero,
 /// ensuring fees never exceed the calculated amount and never overcharge users.
 pub const DEFAULT_PLATFORM_FEE_PERCENTAGE: i128 = 200; // 2.00%
@@ -273,6 +283,25 @@ pub const FEE_COLLECTION_THRESHOLD: i128 = 100_000_000;
 /// Security note: This is NOT the same as market-specific fee caps.
 /// It's a global upper bound enforced at the contract level.
 pub const MAX_PLATFORM_FEE_PERCENTAGE: i128 = 1000; // 10.00%
+
+/// Validates contract initialization parameters atomically.
+///
+/// This function must be called before any contract state is modified during
+/// initialization. It enforces that all initialization parameters are within
+/// their configured safe ranges. Because it asserts before returning, an
+/// invalid parameter set causes the transaction to fail without committing
+/// any partial state, ensuring atomic initialization.
+pub fn validate_initialization_params(platform_fee_percentage: i128, creation_fee: i128) {
+    assert!(
+        platform_fee_percentage >= MIN_PLATFORM_FEE_PERCENTAGE
+            && platform_fee_percentage <= MAX_PLATFORM_FEE_PERCENTAGE,
+        "invalid platform fee percentage"
+    );
+    assert!(
+        creation_fee >= MIN_FEE_AMOUNT && creation_fee <= MAX_FEE_AMOUNT,
+        "invalid creation fee"
+    );
+}
 
 /// Minimum platform fee percentage (0%)
 ///
@@ -358,6 +387,31 @@ pub const ORACLE_RETRY_ATTEMPTS: u32 = 3;
 /// Oracle timeout seconds
 pub const ORACLE_TIMEOUT_SECONDS: u64 = 30;
 
+// ===== MONITORING CONSTANTS =====
+
+/// Oracle health degradation threshold — consecutive bad samples needed to flip from Working to Degraded.
+///
+/// Higher values reduce flapping but delay detection of real issues.
+/// Safe range: 2–10.  Defaults trade off promptness vs stability.
+pub const ORACLE_HEALTH_DEGRADED_THRESHOLD: u32 = 3;
+
+/// Oracle health recovery threshold — consecutive good samples needed to flip from Degraded back to Working.
+///
+/// Higher values prevent premature recovery after a transient blip.
+/// Safe range: 2–10.  Should be >= the degraded threshold for stability.
+pub const ORACLE_HEALTH_RECOVERY_THRESHOLD: u32 = 3;
+
+/// Maximum number of alerts retained in the monitoring queue (FIFO, oldest dropped first).
+///
+/// When the queue is full and a new alert arrives, the oldest entry is evicted and
+/// `monitor_overflowed` is set to `true`.  Operators can detect this via
+/// [`ContractMonitor::is_overflow`] and reset the flag with
+/// [`ContractMonitor::clear_overflow`] (admin-gated).
+///
+/// Safe range: 10–1000.  Values below 10 risk dropping legitimate alerts under
+/// normal load; values above 1000 increase per-call storage I/O noticeably.
+pub const MONITOR_QUEUE_CAP: u32 = 10;
+
 // ===== STORAGE CONSTANTS =====
 
 /// Storage key for admin address
@@ -374,6 +428,15 @@ pub const RESOLUTION_ANALYTICS_STORAGE_KEY: &str = "ResolutionAnalytics";
 
 /// Storage key for oracle statistics
 pub const ORACLE_STATS_STORAGE_KEY: &str = "OracleStats";
+
+/// Storage key for the complete contract configuration
+pub const CONFIG_STORAGE_KEY: &str = "ContractConfig";
+
+/// Storage key for the configuration update audit history
+pub const CONFIG_HISTORY_STORAGE_KEY: &str = "ConfigHistory";
+
+/// Maximum number of configuration update history records retained
+pub const CONFIG_HISTORY_MAX_LEN: u32 = 100;
 
 // ===== CONFIGURATION STRUCTS =====
 
@@ -426,47 +489,22 @@ pub const ORACLE_STATS_STORAGE_KEY: &str = "OracleStats";
 /// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[contracttype]
+// duplicate derive removed
 pub enum Environment {
-    /// Development environment with relaxed validation and low fees.
-    ///
-    /// Characteristics:
-    /// - Minimal fees for easy testing
-    /// - Relaxed validation rules
-    /// - Short timeouts for faster iteration
-    /// - Permissive market creation limits
-    /// - Debug-friendly error messages
     Development,
-
-    /// Testnet environment that mirrors production settings.
-    ///
-    /// Characteristics:
-    /// - Production-like fee structures
-    /// - Full validation enabled
-    /// - Realistic timeouts and limits
-    /// - Comprehensive testing capabilities
-    /// - Integration testing support
     Testnet,
-
-    /// Production mainnet environment with full security.
-    ///
-    /// Characteristics:
-    /// - Optimized fee structures
-    /// - Strict validation and security
-    /// - Production timeouts and limits
-    /// - Maximum security features
-    /// - Audit-ready configuration
     Mainnet,
-
-    /// Custom environment for specialized deployments.
-    ///
-    /// Characteristics:
-    /// - Configurable parameters
-    /// - Flexible validation rules
-    /// - Custom fee structures
-    /// - Specialized use case support
-    /// - Enterprise deployment ready
     Custom,
 }
+
+impl Default for Environment {
+    fn default() -> Self {
+        Environment::Development
+    }
+}
+
+
+
 
 /// Network-specific configuration for Stellar blockchain connectivity.
 ///
@@ -560,6 +598,21 @@ pub struct NetworkConfig {
     pub contract_address: Address,
 }
 
+impl Default for NetworkConfig {
+    fn default() -> Self {
+        use soroban_sdk::{Env, String, Address};
+        let env = Env::default();
+        NetworkConfig {
+            environment: Environment::Development,
+            passphrase: String::from_str(&env, ""),
+            rpc_url: String::from_str(&env, ""),
+            network_id: String::from_str(&env, ""),
+            contract_address: Address::from_str(&env, ""),
+        }
+    }
+}
+
+
 /// Comprehensive fee structure configuration for the prediction platform.
 ///
 /// This struct defines all fee-related parameters that govern the economic
@@ -602,7 +655,7 @@ pub struct NetworkConfig {
 /// let platform_fee = (payout * fee_config.platform_fee_percentage) / 10000;
 /// println!("Platform fee: {} stroops", platform_fee); // 25 XLM
 /// ```
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 #[contracttype]
 pub struct FeeConfig {
     /// Platform fee percentage in basis points (1/100th of a percent).
@@ -699,7 +752,7 @@ pub struct FeeConfig {
 /// let is_large_market = market_volume >= voting_config.large_market_threshold;
 /// println!("Large market: {}", is_large_market); // false
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[contracttype]
 pub struct VotingConfig {
     /// Minimum stake required to vote on a market outcome (in stroops).
@@ -805,7 +858,7 @@ pub struct VotingConfig {
 ///
 /// println!("Market valid: {}", valid_question && valid_outcomes && valid_duration);
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[contracttype]
 pub struct MarketConfig {
     /// Maximum allowed market duration in days.
@@ -926,7 +979,7 @@ pub struct MarketConfig {
 ///                 extension_days <= extension_config.max_extension_days;
 /// println!("Can extend: {}", can_extend); // true
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[contracttype]
 pub struct ExtensionConfig {
     /// Maximum number of days that can be added in a single extension.
@@ -1010,7 +1063,7 @@ pub struct ExtensionConfig {
 ///
 /// println!("Final confidence: {}%", weighted_confidence); // 87%
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[contracttype]
 pub struct ResolutionConfig {
     /// Minimum allowed confidence score (typically 0).
@@ -1102,7 +1155,7 @@ pub struct ResolutionConfig {
 /// ```
 /// Runtime/config settings for oracle requests (age, retries, timeout).
 /// Named to avoid conflict with types::OracleConfig (market oracle config).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[contracttype]
 pub struct OracleRuntimeConfig {
     /// Maximum age of oracle data before it's considered stale (in seconds).
@@ -1221,7 +1274,7 @@ pub struct OracleRuntimeConfig {
 /// - Document rationale for production configuration values
 /// - Monitor system behavior after configuration updates
 /// - Maintain configuration version history for rollbacks
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 #[contracttype]
 pub struct ContractConfig {
     /// Network connectivity and environment configuration.
@@ -2255,7 +2308,8 @@ impl ConfigManager {
     /// - Environment-specific deployments
     /// - Configuration resets and migrations
     pub fn store_config(env: &Env, config: &ContractConfig) -> Result<(), Error> {
-        let key = Symbol::new(env, "ContractConfig");
+        ConfigValidator::validate_contract_config(config)?;
+        let key = Symbol::new(env, CONFIG_STORAGE_KEY);
         env.storage().persistent().set(&key, config);
         Ok(())
     }
@@ -2313,7 +2367,7 @@ impl ConfigManager {
     /// - Oracle integration and resolution
     /// - Admin operations and updates
     pub fn get_config(env: &Env) -> Result<ContractConfig, Error> {
-        let key = Symbol::new(env, "ContractConfig");
+        let key = Symbol::new(env, CONFIG_STORAGE_KEY);
         // Check if key exists before trying to get it to avoid segfaults
         match env
             .storage()
@@ -2453,7 +2507,7 @@ impl ConfigManager {
 
     /// Internal helper: push a history record, keep last 100 entries
     fn push_history(env: &Env, record: &ConfigUpdateRecord) {
-        let key = Symbol::new(env, "ConfigHistory");
+        let key = Symbol::new(env, CONFIG_HISTORY_STORAGE_KEY);
         let mut history: soroban_sdk::Vec<ConfigUpdateRecord> = env
             .storage()
             .persistent()
@@ -2461,7 +2515,7 @@ impl ConfigManager {
             .unwrap_or_else(|| soroban_sdk::Vec::new(env));
 
         history.push_back(record.clone());
-        if history.len() > 100 {
+        if history.len() > CONFIG_HISTORY_MAX_LEN {
             history.remove(0);
         }
         env.storage().persistent().set(&key, &history);
@@ -2476,7 +2530,7 @@ impl ConfigManager {
     pub fn get_configuration_history(
         env: &Env,
     ) -> Result<soroban_sdk::Vec<ConfigUpdateRecord>, Error> {
-        let key = Symbol::new(env, "ConfigHistory");
+        let key = Symbol::new(env, CONFIG_HISTORY_STORAGE_KEY);
         Ok(env
             .storage()
             .persistent()
@@ -2753,19 +2807,37 @@ impl ConfigValidator {
 
     /// Validate market configuration
     pub fn validate_market_config(config: &MarketConfig) -> Result<(), Error> {
-        if config.max_duration_days < config.min_duration_days {
+        if config.max_duration_days < MIN_MARKET_DURATION_DAYS
+            || config.max_duration_days > MAX_MARKET_DURATION_DAYS
+        {
             return Err(Error::InvalidInput);
         }
-
-        if config.max_outcomes < config.min_outcomes {
+        if config.min_duration_days < MIN_MARKET_DURATION_DAYS
+            || config.min_duration_days > config.max_duration_days
+        {
             return Err(Error::InvalidInput);
         }
-
-        if config.max_question_length == 0 {
+        if config.max_outcomes < MIN_MARKET_OUTCOMES
+            || config.max_outcomes > MAX_MARKET_OUTCOMES
+        {
             return Err(Error::InvalidInput);
         }
-
-        if config.max_outcome_length == 0 {
+        if config.min_outcomes < MIN_MARKET_OUTCOMES
+            || config.min_outcomes > config.max_outcomes
+        {
+            return Err(Error::InvalidInput);
+        }
+        if config.max_question_length < MIN_QUESTION_LENGTH
+            || config.max_question_length > MAX_QUESTION_LENGTH
+        {
+            return Err(Error::InvalidInput);
+        }
+        if config.max_outcome_length < MIN_OUTCOME_LENGTH
+            || config.max_outcome_length > MAX_OUTCOME_LENGTH
+        {
+            return Err(Error::InvalidInput);
+        }
+        if config.max_active_events_per_creator == 0 {
             return Err(Error::InvalidInput);
         }
 
@@ -3035,6 +3107,7 @@ impl ConfigTesting {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::testutils::Address as _;
 
     #[test]
     fn test_config_manager_default_configs() {
@@ -3068,7 +3141,7 @@ mod tests {
 
         // Test invalid fee configuration
         let mut invalid_config = config.clone();
-        invalid_config.fees.platform_fee_percentage = 1001; // Exceeds the allowed maximum
+        invalid_config.fees.platform_fee_percentage = MAX_PLATFORM_FEE_PERCENTAGE + 1;
         assert!(ConfigValidator::validate_contract_config(&invalid_config).is_err());
 
         // Test invalid voting configuration
@@ -3191,5 +3264,53 @@ mod tests {
         assert_eq!(MAX_ORACLE_PRICE_AGE, 3600);
         assert_eq!(ORACLE_RETRY_ATTEMPTS, 3);
         assert_eq!(ORACLE_TIMEOUT_SECONDS, 30);
+    }
+
+    #[test]
+    fn test_store_config_rejects_invalid_configuration() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let mut invalid = ConfigManager::get_development_config(&env);
+        invalid.fees.platform_fee_percentage = MAX_PLATFORM_FEE_PERCENTAGE + 1;
+
+        env.as_contract(&contract_id, || {
+            assert!(ConfigManager::store_config(&env, &invalid).is_err());
+            assert!(matches!(
+                ConfigManager::get_config(&env),
+                Err(Error::ConfigNotFound)
+            ));
+        });
+    }
+
+    #[test]
+    fn test_config_history_retains_last_hundred_records() {
+        let env = Env::default();
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let admin = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let cfg = ConfigManager::get_development_config(&env);
+            ConfigManager::store_config(&env, &cfg).unwrap();
+
+            for i in 0..CONFIG_HISTORY_MAX_LEN + 5 {
+                let old = String::from_str(&env, &alloc::format!("old-{}", i));
+                let new = String::from_str(&env, &alloc::format!("new-{}", i));
+                ConfigManager::push_history(
+                    &env,
+                    &ConfigUpdateRecord {
+                        updated_by: admin.clone(),
+                        change_type: String::from_str(&env, "test"),
+                        old_value: old,
+                        new_value: new,
+                        timestamp: i as u64,
+                    },
+                );
+            }
+
+            let history = ConfigManager::get_configuration_history(&env).unwrap();
+            assert_eq!(history.len(), CONFIG_HISTORY_MAX_LEN);
+            let first_old = history.get(0).unwrap().old_value.clone();
+            assert_eq!(first_old, String::from_str(&env, "old-5"));
+        });
     }
 }

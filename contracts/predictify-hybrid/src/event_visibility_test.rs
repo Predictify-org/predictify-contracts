@@ -213,6 +213,7 @@ mod event_visibility_tests {
             &event_id,
             &String::from_str(&env, "yes"),
             &1_000_000,
+            &250,
         );
     }
 }

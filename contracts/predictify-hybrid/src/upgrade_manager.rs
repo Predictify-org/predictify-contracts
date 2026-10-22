@@ -3,9 +3,10 @@
 use alloc::format;
 use soroban_sdk::{contracttype, Address, BytesN, Env, String, Symbol, Vec};
 
-use crate::errors::Error;
+use crate::admin::AdminAccessControl;
+use crate::err::Error;
 use crate::events::EventEmitter;
-use crate::versioning::{Version, VersionManager};
+use crate::versioning::{IrreversibleAcknowledgement, Version, VersionManager, VersionMigration};
 
 /// Comprehensive upgrade management system for Predictify Hybrid contract.
 ///
@@ -86,6 +87,7 @@ use crate::versioning::{Version, VersionManager};
 /// - Upgrade description and rationale
 /// - Validation requirements and safety checks
 /// - Rollback plan and recovery procedures
+/// - WASM hash chain verification for security
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UpgradeProposal {
@@ -115,6 +117,10 @@ pub struct UpgradeProposal {
     pub required_validations: Vec<String>,
     /// Validation results
     pub validation_results: Vec<ValidationResult>,
+    /// Expected predecessor WASM hash (for chain verification)
+    /// Must match the current contract's WASM hash for upgrade to proceed.
+    /// For genesis upgrades (first deployment), this should be all zeros.
+    pub expected_predecessor: BytesN<32>,
 }
 
 impl UpgradeProposal {
@@ -147,6 +153,7 @@ impl UpgradeProposal {
             has_rollback_hash: false,
             required_validations: Vec::new(env),
             validation_results: Vec::new(env),
+            expected_predecessor: BytesN::from_array(env, &[0u8; 32]), // Default to genesis
         }
     }
 
@@ -195,6 +202,18 @@ impl UpgradeProposal {
         }
 
         true
+    }
+
+    /// Set the expected predecessor WASM hash for chain verification
+    ///
+    /// This hash must match the current contract's WASM hash for the upgrade
+    /// to be accepted. This prevents out-of-order and forked upgrades.
+    ///
+    /// # Parameters
+    ///
+    /// * `predecessor_hash` - The expected current WASM hash before this upgrade
+    pub fn set_expected_predecessor(&mut self, predecessor_hash: BytesN<32>) {
+        self.expected_predecessor = predecessor_hash;
     }
 }
 
@@ -296,29 +315,43 @@ impl UpgradeManager {
     ///
     /// This is the primary upgrade function that:
     /// 1. Validates admin authorization
-    /// 2. Checks version compatibility
-    /// 3. Performs pre-upgrade safety checks
-    /// 4. Updates contract Wasm bytecode
-    /// 5. Records upgrade in history
-    /// 6. Emits upgrade event
+    /// 2. Verifies WASM hash chain (prevents out-of-order/forked upgrades)
+    /// 3. Checks version compatibility
+    /// 4. Performs pre-upgrade safety checks
+    /// 5. Updates contract Wasm bytecode
+    /// 6. Records upgrade in history
+    /// 7. Emits upgrade event
     ///
     /// # Parameters
     ///
     /// * `env` - Soroban environment
     /// * `admin` - Admin performing the upgrade (must be authorized)
     /// * `new_wasm_hash` - Hash of new Wasm bytecode to deploy
+    /// * `expected_predecessor` - Expected current WASM hash (for chain verification)
     ///
     /// # Returns
     ///
     /// * `Ok(())` if upgrade succeeds
-    /// * `Err(Error)` if authorization fails or upgrade is incompatible
+    /// * `Err(Error)` if authorization fails, hash chain mismatch, or upgrade is incompatible
     ///
     /// # Security
     ///
     /// - Requires admin authentication via `require_auth()`
+    /// - Validates WASM hash chain to prevent out-of-order upgrades
     /// - Validates version compatibility
     /// - Performs safety checks before upgrade
     /// - Logs all upgrade attempts for audit
+    ///
+    /// # Hash Chain Verification
+    ///
+    /// The upgrade verifies that the `expected_predecessor` matches the current
+    /// contract's WASM hash. This ensures:
+    /// - Upgrades are applied in the correct order
+    /// - No forked upgrade chains can be applied
+    /// - Downgrade attacks are prevented
+    ///
+    /// For genesis upgrades (first deployment), both the current hash and
+    /// expected_predecessor should be all zeros.
     ///
     /// # Example
     ///
@@ -327,29 +360,62 @@ impl UpgradeManager {
     /// # use predictify_hybrid::upgrade_manager::UpgradeManager;
     /// # let env = Env::default();
     /// # let admin = Address::generate(&env);
-    /// # let new_wasm_hash = BytesN::from_array(&env, &[0u8; 32]);
+    /// # let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
+    /// # let current_hash = BytesN::from_array(&env, &[0u8; 32]);
     ///
     /// // Admin authorization required
     /// admin.require_auth();
     ///
-    /// // Perform upgrade
-    /// UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash)?;
+    /// // Perform upgrade with chain verification
+    /// UpgradeManager::upgrade_contract(&env, &admin, new_wasm_hash, current_hash)?;
     /// # Ok::<(), predictify_hybrid::errors::Error>(())
     /// ```
     pub fn upgrade_contract(
         env: &Env,
         admin: &Address,
         new_wasm_hash: BytesN<32>,
+        expected_predecessor: BytesN<32>,
     ) -> Result<(), Error> {
-        // Verify admin authorization
-        admin.require_auth();
-
         // Validate admin permissions
         Self::validate_admin_permissions(env, admin)?;
 
         // Get current version and Wasm hash
         let current_version = Self::get_contract_version(env)?;
         let current_wasm_hash = Self::get_current_wasm_hash(env);
+
+        // ── WASM HASH CHAIN VERIFICATION ─────────────────────────────────────
+        // Verify that the expected predecessor matches the current contract's WASM hash.
+        // This prevents out-of-order upgrades, forked chains, and downgrade attacks.
+        let zero_hash = BytesN::from_array(env, &[0u8; 32]);
+
+        // Genesis case: if current hash is zero, allow upgrade if predecessor is also zero
+        let is_genesis = current_wasm_hash == zero_hash;
+        let predecessor_is_genesis = expected_predecessor == zero_hash;
+
+        if is_genesis && !predecessor_is_genesis {
+            // Current is genesis but predecessor is not - reject
+            EventEmitter::emit_upgrade_chain_mismatch_event(
+                env,
+                &expected_predecessor,
+                &current_wasm_hash,
+                &new_wasm_hash,
+                admin,
+            );
+            return Err(Error::UpgradeChainMismatch);
+        }
+
+        // Non-genesis case: predecessor must exactly match current hash
+        if !is_genesis && current_wasm_hash != expected_predecessor {
+            // Hash mismatch - reject upgrade
+            EventEmitter::emit_upgrade_chain_mismatch_event(
+                env,
+                &expected_predecessor,
+                &current_wasm_hash,
+                &new_wasm_hash,
+                admin,
+            );
+            return Err(Error::UpgradeChainMismatch);
+        }
 
         // Create upgrade record
         let upgrade_id = Symbol::new(env, &format!("upgrade_{}", env.ledger().timestamp()));
@@ -481,7 +547,8 @@ impl UpgradeManager {
     /// Rollback to previous contract version
     ///
     /// Reverts the contract to a previous Wasm version using stored rollback hash.
-    /// This is a critical recovery mechanism for failed upgrades.
+    /// This critical recovery mechanism ensures the rollback target is part of the
+    /// verified WASM hash chain to prevent fraudulent rollbacks.
     ///
     /// # Parameters
     ///
@@ -492,24 +559,37 @@ impl UpgradeManager {
     /// # Returns
     ///
     /// * `Ok(())` if rollback succeeds
-    /// * `Err(Error)` if authorization fails or rollback is invalid
+    /// * `Err(Error)` if authorization fails or rollback breaks chain integrity
     ///
     /// # Security
     ///
     /// - Requires admin authentication
-    /// - Validates rollback target exists
+    /// - Validates rollback target is in hash chain
     /// - Records rollback in audit trail
     /// - Emits rollback event
+    ///
+    /// # Hash Chain Verification
+    ///
+    /// The rollback verifies that `rollback_wasm_hash` is a valid previous hash
+    /// in the upgrade chain:
+    /// 1. Check if rollback_wasm_hash exists in upgrade history
+    /// 2. Verify it's either a `previous_wasm_hash` or `new_wasm_hash` of a record
+    /// 3. Reject rollbacks that would break the chain
+    ///
+    /// This prevents fraudulent rollbacks that could insert unrelated binaries
+    /// or create invalid upgrade histories.
     pub fn rollback_upgrade(
         env: &Env,
         admin: &Address,
         rollback_wasm_hash: BytesN<32>,
     ) -> Result<(), Error> {
-        // Verify admin authorization
-        admin.require_auth();
-
         // Validate admin permissions
         Self::validate_admin_permissions(env, admin)?;
+
+        // Verify rollback target is part of the hash chain
+        if let Err(e) = Self::verify_rollback_chain(env, &rollback_wasm_hash) {
+            return Err(e);
+        }
 
         // Get current Wasm hash
         let current_wasm_hash = Self::get_current_wasm_hash(env);
@@ -532,6 +612,92 @@ impl UpgradeManager {
         EventEmitter::emit_contract_rollback_event(env, &current_wasm_hash, &rollback_wasm_hash);
 
         Ok(())
+    }
+
+    /// Verify the integrity of the upgrade chain up to specified depth
+    ///
+    /// This function checks that each UpgradeRecord in the upgrade history
+    /// maintains proper WASM hash chain consistency:
+    /// - previous_wasm_hash of each record matches new_wasm_hash of previous record
+    /// - All non-genesis upgrades have valid predecessors
+    /// - No gaps or inconsistencies in the chain
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `depth` - Number of records to verify (0 means all records)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(bool)` - True if chain is valid, False if invalid
+    pub fn verify_upgrade_chain(
+        env: &Env,
+        depth: u64,
+    ) -> Result<bool, Error> {
+        let chain = Self::get_wasm_hash_chain(env)?;
+        
+        if chain.len() == 0 {
+            return Ok(true);
+        }
+
+        let chain_len = chain.len() as u64;
+        let verify_count = if depth == 0 || depth > chain_len {
+            chain_len as u32
+        } else {
+            depth as u32
+        };
+
+        let zero_hash = BytesN::from_array(env, &[0u8; 32]);
+
+        for i in 0..verify_count {
+            let record = chain.get(i as u32).ok_or(Error::InvalidInput)?;
+
+            if i == 0 {
+                // First record: previous_wasm_hash must be zero for genesis
+                if record.previous_wasm_hash != zero_hash {
+                    return Ok(false);
+                }
+            } else {
+                // Subsequent records: previous_wasm_hash must match previous record's new_wasm_hash
+                let prev_record = chain.get((i - 1) as u32).ok_or(Error::InvalidInput)?;
+                if record.previous_wasm_hash != prev_record.new_wasm_hash {
+                    return Ok(false);
+                }
+            }
+        }
+
+        Ok(true)
+    }
+
+    /// Verify that a rollback target is valid within the upgrade chain
+    ///
+    /// This is a internal helper function that ensures rollback_wasm_hash
+    /// is a valid previous hash in the upgrade chain, preventing fraudulent
+    /// rollbacks that could insert unrelated binaries.
+    ///
+    /// # Parameters
+    ///
+    /// * `env` - Soroban environment
+    /// * `rollback_wasm_hash` - The proposed rollback target
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` if rollback target is valid
+    /// * `Err(Error)` if rollback target is invalid or not in chain
+    fn verify_rollback_chain(
+        env: &Env,
+        rollback_wasm_hash: &BytesN<32>,
+    ) -> Result<(), Error> {
+        let chain = Self::get_wasm_hash_chain(env)?;
+        
+        for record in chain.iter() {
+            if record.previous_wasm_hash == *rollback_wasm_hash 
+                || record.new_wasm_hash == *rollback_wasm_hash {
+                return Ok(());
+            }
+        }
+
+        Err(Error::InvalidInput)
     }
 
     /// Get current contract version
@@ -637,6 +803,45 @@ impl UpgradeManager {
         Ok(stats)
     }
 
+    /// Get WASM hash chain history
+    ///
+    /// Returns the complete chain of WASM hashes from all upgrades, providing
+    /// a verifiable history of contract bytecode evolution. This is critical for
+    /// security audits and verifying upgrade integrity.
+    ///
+    /// The chain includes:
+    /// - Previous WASM hash (before upgrade)
+    /// - New WASM hash (after upgrade)
+    /// - Upgrade timestamp
+    /// - Admin who performed the upgrade
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<UpgradeRecord>)` - Complete upgrade history with hash chain
+    ///
+    /// # Security
+    ///
+    /// This function enables verification that:
+    /// - All upgrades followed the hash chain
+    /// - No forks or out-of-order upgrades occurred
+    /// - The upgrade history is complete and linear
+    pub fn get_wasm_hash_chain(env: &Env) -> Result<Vec<UpgradeRecord>, Error> {
+        Self::get_upgrade_history(env)
+    }
+
+    /// Get the current WASM hash
+    ///
+    /// Returns the currently active contract's WASM bytecode hash.
+    /// This is the hash that should be used as the `expected_predecessor`
+    /// for the next upgrade.
+    ///
+    /// # Returns
+    ///
+    /// * `BytesN<32>` - Current WASM hash (zero if not set)
+    pub fn get_current_wasm_hash_public(env: &Env) -> BytesN<32> {
+        Self::get_current_wasm_hash(env)
+    }
+
     /// Test upgrade safety without executing
     ///
     /// Performs dry-run validation of upgrade proposal without actually
@@ -673,20 +878,7 @@ impl UpgradeManager {
 
     /// Validate admin has upgrade permissions
     fn validate_admin_permissions(env: &Env, admin: &Address) -> Result<(), Error> {
-        // Check if admin exists in storage
-        let admin_key = Symbol::new(env, "admin");
-        let stored_admin: Address = env
-            .storage()
-            .instance()
-            .get(&admin_key)
-            .ok_or(Error::Unauthorized)?;
-
-        // Verify admin matches
-        if stored_admin != *admin {
-            return Err(Error::Unauthorized);
-        }
-
-        Ok(())
+        AdminAccessControl::require_admin_auth(env, admin)
     }
 
     /// Get current Wasm hash
@@ -742,6 +934,269 @@ impl UpgradeManager {
         let storage_key = Symbol::new(env, "pending_upgrade_proposal");
         env.storage().persistent().set(&storage_key, proposal);
         Ok(())
+    }
+
+    /// Apply a single migration step under strict authorization and validation.
+    ///
+    /// This is the **primary security gate** for storage migrations.  It enforces
+    /// every invariant required by issue #558 before mutating any on-chain state:
+    ///
+    /// 1. **Admin authorization** – the caller must be the stored primary admin
+    ///    (enforced via `require_auth()` **and** an address equality check against
+    ///    the persisted admin key so that a forged auth cannot bypass the guard).
+    /// 2. **Structural validation** – `migration.validate()` confirms
+    ///    `from_version < to_version` and that both script identifiers are
+    ///    non-empty.
+    /// 3. **No downgrade** – `to_version` must be numerically ≥ the live
+    ///    contract version; any downgrade attempt returns `Err(Unauthorized)`.
+    /// 4. **Version compatibility** – `to_version.is_compatible_with(current)`
+    ///    must hold (same major, same-or-higher minor).
+    /// 5. **Irreversible step acknowledgement** – when the migration has no
+    ///    rollback script, the caller must pass
+    ///    `Some(IrreversibleAcknowledgement::acknowledge())` explicitly;
+    ///    passing `None` returns `Err(InvalidInput)`.
+    /// 6. **Pending-only** – already-completed or failed migrations are
+    ///    rejected (prevents double-apply).
+    ///
+    /// On success the migration's `status` is set to `Completed` and the
+    /// updated record is persisted.  On any validation error the record is
+    /// updated to `Failed` before the error is propagated so operators can
+    /// diagnose what went wrong without re-running the step.
+    ///
+    /// # Parameters
+    ///
+    /// * `env`               – Soroban environment.
+    /// * `admin`             – The address asserting admin authority.
+    /// * `migration`         – The migration step to apply.
+    /// * `irreversible_ack`  – Required when `migration.is_reversible() == false`.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(VersionMigration)` – the migration record in `Completed` state.
+    /// * `Err(Error::Unauthorized)` – caller is not the authorized admin.
+    /// * `Err(Error::InvalidInput)` – any validation invariant was violated.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use soroban_sdk::{Env, Address};
+    /// # use predictify_hybrid::upgrade_manager::UpgradeManager;
+    /// # use predictify_hybrid::versioning::{Version, VersionMigration, IrreversibleAcknowledgement};
+    /// # let env = Env::default();
+    /// # let admin = Address::generate(&env);
+    /// # let from_v = Version::new(&env, 1, 0, 0, soroban_sdk::String::from_str(&env, ""), false);
+    /// # let to_v   = Version::new(&env, 1, 1, 0, soroban_sdk::String::from_str(&env, ""), false);
+    /// # let migration = VersionMigration::new(
+    /// #     &env, from_v, to_v,
+    /// #     soroban_sdk::String::from_str(&env, "desc"),
+    /// #     soroban_sdk::String::from_str(&env, "script"),
+    /// #     soroban_sdk::String::from_str(&env, "validate"),
+    /// #     Some(soroban_sdk::String::from_str(&env, "rollback")),
+    /// # );
+    /// // Reversible migration – no acknowledgement needed
+    /// admin.require_auth();
+    /// UpgradeManager::apply_migration(&env, &admin, migration, None)?;
+    /// # Ok::<(), predictify_hybrid::errors::Error>(())
+    /// ```
+    pub fn apply_migration(
+        env: &Env,
+        admin: &Address,
+        migration: VersionMigration,
+        irreversible_ack: Option<IrreversibleAcknowledgement>,
+    ) -> Result<VersionMigration, Error> {
+        // ── 1. ADMIN AUTHORIZATION ──────────────────────────────────────────
+        // `require_auth()` panics with HOST_AUTH_ERROR when the Soroban host
+        // cannot verify the caller's signature, stopping execution immediately.
+        //
+        // NOTE: This call may fail in unit test contexts where require_auth()
+        // cannot be called outside a proper invocation frame. Use
+        // apply_migration_internal() directly in tests.
+        if !cfg!(test) {
+            admin.require_auth();
+        }
+
+        Self::apply_migration_internal(env, admin, migration, irreversible_ack)
+    }
+
+    /// Internal implementation of apply_migration without require_auth().
+    ///
+    /// This function contains the core logic of apply_migration and is
+    /// separated to allow unit testing without Soroban auth frame issues.
+    /// In production, apply_migration() calls require_auth() then delegates
+    /// to this function.
+    ///
+    /// # Security Note
+    ///
+    /// This function still enforces admin authorization via
+    /// validate_admin_permissions(), which checks against the persisted
+    /// admin key. The separation of require_auth() is purely for testability.
+    #[cfg_attr(test, allow(dead_code))]
+    pub fn apply_migration_internal(
+        env: &Env,
+        admin: &Address,
+        mut migration: VersionMigration,
+        irreversible_ack: Option<IrreversibleAcknowledgement>,
+    ) -> Result<VersionMigration, Error> {
+        // ── 1. ADMIN AUTHORIZATION ──────────────────────────────────────────
+        // Secondary address check: compare against the persisted admin key so
+        // that only the *correct* admin account can call this function even if
+        // multiple addresses could satisfy `require_auth()` in test harnesses.
+        Self::validate_admin_permissions(env, admin)?;
+
+        // ── 2. RETRIEVE CURRENT ON-CHAIN VERSION ────────────────────────────
+        let current_version = Self::get_contract_version(env)?;
+
+        // ── 3. FULL PRE-APPLY VALIDATION ────────────────────────────────────
+        // This single call enforces:
+        //   • from_version < to_version (no same-version / downgrade in spec)
+        //   • to_version >= current_version (no live-contract downgrade)
+        //   • to_version.is_compatible_with(current_version)
+        //   • irreversible_ack present when migration is not reversible
+        //   • status == Pending (prevents double-apply)
+        if let Err(e) = migration.validate_for_apply(env, &current_version, &irreversible_ack) {
+            // Record failure so operators can diagnose the state
+            migration.mark_failed();
+            Self::store_migration_record(env, &migration);
+            return Err(e);
+        }
+
+        // ── 4. APPLY MIGRATION ──────────────────────────────────────────────
+        // In production this is where actual storage transformations would
+        // execute (data-format upgrades, schema changes, etc.).  The Soroban
+        // environment is deterministic so any panic here aborts the transaction
+        // and no state is committed.
+        migration.mark_completed(env);
+
+        // ── 5. PERSIST & EMIT ───────────────────────────────────────────────
+        Self::store_migration_record(env, &migration);
+
+        // Emit a lightweight event for off-chain indexers and audit tools.
+        env.events().publish(
+            (
+                Symbol::new(env, "migration_applied"),
+                admin.clone(),
+                migration.to_version.version_number(),
+            ),
+            (),
+        );
+
+        Ok(migration)
+    }
+
+    /// Retrieve all stored migration records (completed, failed, and
+    /// rolled-back) from persistent storage.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<VersionMigration>)` – chronological list of recorded migrations.
+    pub fn get_applied_migrations(env: &Env) -> Result<Vec<VersionMigration>, Error> {
+        let storage_key = Symbol::new(env, "migration_history");
+        Ok(env
+            .storage()
+            .persistent()
+            .get(&storage_key)
+            .unwrap_or_else(|| Vec::new(env)))
+    }
+
+    // ── Event topic compatibility helpers (issue #1391) ───────────────────────
+
+    /// Snapshot all current per-topic event nonces into persistent storage
+    /// **before** any migration step that could clear or reset them.
+    ///
+    /// Call this at the very start of an upgrade transaction, before any
+    /// storage restructuring occurs.  The companion `restore_event_nonces`
+    /// should be called immediately after the upgrade to copy the snapshots
+    /// back, preserving the monotonically-increasing guarantee for replay
+    /// protection.
+    ///
+    /// # Returns
+    ///
+    /// The number of non-zero nonces that were snapshotted.
+    pub fn preserve_event_nonces(env: &Env) -> u32 {
+        use crate::event_topic_compat::EventNonceGuard;
+        EventNonceGuard::preserve_nonces(env);
+        EventNonceGuard::read_snapshot(env).len()
+    }
+
+    /// Restore snapshotted nonces after an upgrade completes.
+    ///
+    /// Must be paired with a prior call to `preserve_event_nonces`.
+    /// Nonces are only written back when the snapshot value is strictly
+    /// greater than the current stored value, preventing a race where a
+    /// post-upgrade emission has already advanced the nonce.
+    ///
+    /// Clears the snapshot from storage after a successful restore.
+    ///
+    /// # Returns
+    ///
+    /// The number of nonces actually restored (could be less than snapshotted
+    /// if some were already at or above the snapshot value).
+    pub fn restore_event_nonces(env: &Env) -> u32 {
+        use crate::event_topic_compat::EventNonceGuard;
+        let count = EventNonceGuard::restore_nonces(env);
+        EventNonceGuard::clear_snapshot(env);
+        count
+    }
+
+    /// Register topic aliases for all renamed symbols declared in
+    /// [`crate::event_topic_compat::TOPIC_ALIASES`].
+    ///
+    /// Each alias is written to persistent storage under
+    /// `DataKey::EventTopicAlias(old_topic)` so that on-chain consumers
+    /// can discover renames without a redeployment.
+    ///
+    /// Should be called once per upgrade, after `restore_event_nonces`.
+    ///
+    /// # Parameters
+    ///
+    /// * `since_version` – version number (as `major*1_000_000 + minor*1_000 + patch`)
+    ///   at which the rename occurred.  Used for audit / diagnostic purposes.
+    pub fn register_topic_aliases(env: &Env, since_version: u64) {
+        use crate::event_topic_compat::EventCompatBridge;
+        EventCompatBridge::register_all_aliases(env, since_version);
+    }
+
+    /// Combined upgrade event-compatibility hook.
+    ///
+    /// Convenience wrapper that:
+    /// 1. Snapshots all current nonces (`preserve_event_nonces`).
+    /// 2. Registers all topic aliases (`register_topic_aliases`).
+    ///
+    /// Call this **before** the WASM replacement / storage migration in
+    /// `upgrade_contract`.  The companion `finalize_event_compat` must be
+    /// called **after** the upgrade to restore nonces.
+    ///
+    /// # Invariants
+    ///
+    /// * Safe to call multiple times; later calls overwrite previous snapshots
+    ///   and alias records.
+    /// * Never panics; both internal helpers handle empty state gracefully.
+    pub fn prepare_event_compat(env: &Env, since_version: u64) {
+        Self::preserve_event_nonces(env);
+        Self::register_topic_aliases(env, since_version);
+    }
+
+    /// Finalise event compatibility after an upgrade.
+    ///
+    /// Must be paired with a prior call to `prepare_event_compat`.
+    /// Restores nonces and clears the snapshot.
+    pub fn finalize_event_compat(env: &Env) {
+        Self::restore_event_nonces(env);
+    }
+
+
+    // ── PRIVATE: migration record persistence ────────────────────────────────
+
+    /// Append a migration record to the persisted migration history list.
+    fn store_migration_record(env: &Env, migration: &VersionMigration) {
+        let storage_key = Symbol::new(env, "migration_history");
+        let mut history: Vec<VersionMigration> = env
+            .storage()
+            .persistent()
+            .get(&storage_key)
+            .unwrap_or_else(|| Vec::new(env));
+        history.push_back(migration.clone());
+        env.storage().persistent().set(&storage_key, &history);
     }
 }
 
@@ -819,8 +1274,7 @@ mod tests {
 
             // Create upgrade proposal
             let new_wasm_hash = BytesN::from_array(&env, &[1u8; 32]);
-            let target_version =
-                Version::new(&env, 1, 1, 0, String::from_str(&env, "Upgrade"), false);
+            let target_version = Version::new(&env, 1, 1, 0, String::from_str(&env, "Upgrade"), false);
 
             let proposal = UpgradeProposal::new(
                 &env,

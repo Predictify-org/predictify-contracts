@@ -9,7 +9,7 @@ use super::super::super::*;
 use soroban_sdk::testutils::Address as _;
 use crate::validation::{OutcomeDeduplicator, InputValidator, ValidationError};
 use crate::admin::{AdminManager, AdminRole};
-use crate::errors::Error;
+use crate::err::Error;
 
 /// Test 1: Unauthorized Admin Access Attack
 #[test]
