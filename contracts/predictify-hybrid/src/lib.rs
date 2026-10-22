@@ -140,6 +140,8 @@ use storage::BalanceStorage;
 // `capability_bitmap_tests.rs` does not exist in the tree; the capability
 // bitmap is covered by the unit tests inside `capabilities.rs`.
 #[cfg(test)]
+mod stake_ledger_unification_tests;
+#[cfg(test)]
 mod market_state_matrix_tests;
 #[cfg(test)]
 mod timelock_tests;
@@ -1073,6 +1075,14 @@ impl PredictifyHybrid {
     /// State-changing paths may emit events through internal managers; read-only query paths emit no events.
     pub fn vote(env: Env, user: Address, market_id: Symbol, outcome: String, stake: i128) {
         let gas_marker = GasTracker::start_tracking(&env);
+        // Mirrors the `place_bet` entrypoint: the emergency pause is checked
+        // before anything else, so votes cannot be accepted while betting is
+        // paused (issue: vote skipped the circuit breaker).
+        if let Err(e) =
+            crate::circuit_breaker::CircuitBreaker::require_write_allowed(&env, "betting")
+        {
+            panic_with_error!(env, e);
+        }
         user.require_auth();
 
         // Rate limit voting to prevent abuse
@@ -1084,59 +1094,24 @@ impl PredictifyHybrid {
             }
         }
 
-        let mut market: Market = env
-            .storage()
-            .persistent()
-            .get(&market_id)
-            .unwrap_or_else(|| {
-                panic_with_error!(env, Error::MarketNotFound);
-            });
-
-        // Check if the market is still active
-        if market.state != MarketState::Active {
-            panic_with_error!(env, Error::InvalidState);
+        // ===== UNIFIED STAKE LEDGER =====
+        // `vote` and `place_bet` share one validated stake path
+        // (`bets::BetManager::record_stake`): circuit breaker, market state,
+        // bet deadline, outcome validity, min/max/per-cap amount bounds,
+        // duplicate stake across BOTH ledgers, max_participants capacity,
+        // per-user cap and checked `total_staked`, then lock_funds and the
+        // state writes. The first stake can never be overwritten by a bet
+        // (or vice versa) — the second call returns `Error::AlreadyBet`.
+        if let Err(e) = bets::BetManager::record_stake(
+            &env,
+            &user,
+            &market_id,
+            &outcome,
+            stake,
+            bets::StakeSource::Vote,
+        ) {
+            panic_with_error!(env, e);
         }
-
-        // Respect bet_deadline if set, otherwise use end_time
-        let cutoff = if market.bet_deadline > 0 {
-            market.bet_deadline
-        } else {
-            market.end_time
-        };
-        if env.ledger().timestamp() >= cutoff {
-            panic_with_error!(env, Error::MarketClosed);
-        }
-
-        // Validate outcome
-        let outcome_exists = market.outcomes.iter().any(|o| o == outcome);
-        if !outcome_exists {
-            panic_with_error!(env, Error::InvalidOutcome);
-        }
-
-        // Check if user already voted
-        if market.votes.get(user.clone()).is_some() {
-            panic_with_error!(env, Error::AlreadyVoted);
-        }
-
-        // Check participant cap
-        if let Some(max) = market.max_participants {
-            if market.votes.len() >= max {
-                panic_with_error!(env, Error::MaxParticipantsReached);
-            }
-        }
-
-        // Lock funds (transfer from user to contract)
-        match bets::BetUtils::lock_funds(&env, &user, stake) {
-            Ok(_) => {}
-            Err(e) => panic_with_error!(env, e),
-        }
-
-        // Store the vote and stake
-        market.votes.set(user.clone(), outcome.clone());
-        market.stakes.set(user.clone(), stake);
-        market.total_staked += stake;
-
-        store_market_with_retention(&env, &market_id, &market);
 
         // Invalidate analytics cache so next read recomputes fresh stats.
         analytics::AnalyticsCache::new(&env).invalidate(&market_id);

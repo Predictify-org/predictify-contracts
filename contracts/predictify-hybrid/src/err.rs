@@ -53,6 +53,11 @@ pub enum Error {
     /// The user has already voted in this market. Only one vote per user is permitted.
     AlreadyVoted = 109,
     /// The user has already placed a bet on this market. Duplicate bets are not allowed.
+    ///
+    /// This is also the unified stake ledger error: staking through the other
+    /// entrypoint after already staking on the market (a `vote` followed by a
+    /// `place_bet`, or a `place_bet` followed by a `vote`) returns
+    /// `AlreadyBet`. The first stake is never overwritten or stranded.
     AlreadyBet = 110,
     /// Bets have already been placed on this market. The market cannot be updated.
     BetsAlreadyPlaced = 111,
