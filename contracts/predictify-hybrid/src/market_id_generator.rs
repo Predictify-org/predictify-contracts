@@ -1249,6 +1249,7 @@ mod tests {
     #[test]
     fn test_create_500_markets_cost_stability() {
         let (env, contract_id, admin) = setup();
+        env.budget().reset_unlimited();
 
         with_contract(&env, &contract_id, || {
             // Create first market and capture count
