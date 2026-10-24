@@ -240,7 +240,7 @@ impl MarketIdGenerator {
             xdr_bytes.get(1).unwrap_or(0),
             xdr_bytes.get(2).unwrap_or(0),
             xdr_bytes.get(3).unwrap_or(0),
-        ]) as usize;
+        ]);
 
         // Check for "mkt_" prefix
         if len < 4 || xdr_bytes.len() < 8 {
@@ -260,7 +260,7 @@ impl MarketIdGenerator {
         // Format: mkt_{8 hex}_{counter}
         // Need to find the position of the second underscore
         let mut underscore_count = 0;
-        let mut counter_start = 0usize;
+        let mut counter_start = 0u32;
 
         for i in 4..(4 + len) {
             if i >= xdr_bytes.len() {
@@ -556,19 +556,17 @@ impl MarketIdGenerator {
             let mut migrated = 0u32;
 
             // Iterate through all admin counters and migrate them
-            for i in 0..counters.len() {
-                if let Some((addr, count)) = counters.get(i) {
-                    // Check if already migrated
-                    let sharded_key = crate::storage::DataKey::AdminMarketCounter(addr.clone());
-                    if !env.storage().persistent().has(&sharded_key) {
-                        env.storage().persistent().set(&sharded_key, &count);
-                        env.storage().persistent().extend_ttl(
-                            &sharded_key,
-                            crate::storage::MARKET_TTL_LEDGERS,
-                            crate::storage::MARKET_TTL_LEDGERS,
-                        );
-                        migrated += 1;
-                    }
+            for (addr, count) in counters.iter() {
+                // Check if already migrated
+                let sharded_key = crate::storage::DataKey::AdminMarketCounter(addr);
+                if !env.storage().persistent().has(&sharded_key) {
+                    env.storage().persistent().set(&sharded_key, &count);
+                    env.storage().persistent().extend_ttl(
+                        &sharded_key,
+                        crate::storage::MARKET_TTL_LEDGERS,
+                        crate::storage::MARKET_TTL_LEDGERS,
+                    );
+                    migrated += 1;
                 }
             }
 
