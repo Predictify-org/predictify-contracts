@@ -704,7 +704,7 @@ pub struct FeeBreakdown {
 /// # let market_id = Symbol::new(&env, "btc_market");
 ///
 /// // Collect fees from a resolved market
-/// let collected_amount = FeeManager::collect_fees(
+/// let collected_amount = FeeManager::collect_fees_authorized(
 ///     &env,
 ///     admin.clone(),
 ///     market_id.clone()
@@ -753,7 +753,11 @@ pub struct FeeManager;
 
 impl FeeManager {
     /// Collect platform fees from a market
-    pub fn collect_fees(env: &Env, admin: Address, market_id: Symbol) -> Result<i128, Error> {
+    pub(crate) fn collect_fees_authorized(
+        env: &Env,
+        admin: Address,
+        market_id: Symbol,
+    ) -> Result<i128, Error> {
         // Authorization is enforced by the `collect_fees` entrypoint via
         // `require_primary_admin` (require_auth + stored-admin identity check).
         // Re-authorizing the same address in the same frame here made the host
@@ -2516,9 +2520,11 @@ mod checked_arithmetic_tests {
             env.storage()
                 .persistent()
                 .set(&Symbol::new(&env, "Admin"), &admin);
+            let config = crate::config::ConfigManager::get_development_config(&env);
+            crate::config::ConfigManager::store_config(&env, &config).unwrap();
             MarketStateManager::update_market(&env, &market_id, &market);
 
-            let result = FeeManager::collect_fees(&env, admin.clone(), market_id.clone());
+            let result = FeeManager::collect_fees_authorized(&env, admin.clone(), market_id.clone());
 
             assert_eq!(result, Err(Error::FeeArithmeticOverflow));
             assert_eq!(
@@ -2578,7 +2584,7 @@ mod checked_arithmetic_tests {
                 .set(&Symbol::new(&env, "Admin"), &admin);
             MarketStateManager::update_market(&env, &market_id, &market);
 
-            let result = FeeManager::collect_fees(&env, admin.clone(), market_id.clone());
+            let result = FeeManager::collect_fees_authorized(&env, admin.clone(), market_id.clone());
             assert!(result.is_ok());
 
             let vault: i128 = env.storage().persistent().get(&FEE_VAULT_KEY).unwrap_or(0);

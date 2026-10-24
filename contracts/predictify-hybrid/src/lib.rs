@@ -6,6 +6,9 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 extern crate alloc;
 
 #[cfg(test)]
+extern crate std;
+
+#[cfg(test)]
 pub(crate) mod testutil;
 
 // ===== MODULE DECLARATIONS =====
@@ -71,7 +74,7 @@ mod validation;
 // mod validation_tests; // disabled - API drift
 mod versioning;
 mod voting;
-mod market_analytics;
+pub mod market_analytics;
 mod performance_benchmarks;
 mod disputes;
 mod edge_cases;
@@ -210,6 +213,9 @@ mod fee_config_commit_reveal_tests;
 
 #[cfg(test)]
 mod fee_source_unification_tests;
+
+#[cfg(test)]
+mod single_frame_auth_tests;
 
 // #[cfg(test)]
 // mod event_creation_tests;
@@ -3174,7 +3180,7 @@ impl PredictifyHybrid {
     ///         println!("Price: ${}", result.price / 100);
     ///         println!("Confidence: {}%", result.confidence_score);
     ///         println!("Sources consulted: {}", result.sources_count);
-    ///         
+    ///
     ///         if result.is_verified {
     ///             println!("Result is verified and authoritative");
     ///         }
@@ -3820,8 +3826,8 @@ impl PredictifyHybrid {
     ///         // Access resolution statistics
     ///         let total_resolved = analytics.total_markets_resolved;
     ///         let oracle_accuracy = analytics.oracle_accuracy_rate;
-    ///         let avg_resolution_time = analytics.average_resolution_time;
-    ///         
+    ///             let avg_resolution_time = analytics.average_resolution_time;
+    ///
     ///         println!("Resolved markets: {}", total_resolved);
     ///         println!("Oracle accuracy: {}%", oracle_accuracy);
     ///     },
@@ -3905,8 +3911,8 @@ impl PredictifyHybrid {
     ///         // Access market statistics
     ///         let total_participants = stats.total_participants;
     ///         let total_stake = stats.total_stake;
-    ///         let leading_outcome = stats.leading_outcome;
-    ///         
+    ///             let leading_outcome = stats.leading_outcome;
+    ///
     ///         println!("Participants: {}", total_participants);
     ///         println!("Total stake: {}", total_stake);
     ///         println!("Leading outcome: {:?}", leading_outcome);
@@ -3998,14 +4004,23 @@ impl PredictifyHybrid {
         if let Err(rate_err) = crate::rate_limiter::RateLimiter::new(env.clone())
             .rate_limit_disputes(user.clone(), market_id.clone())
         {
-            if matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+            if matches!(
+                rate_err,
+                crate::rate_limiter::RateLimiterError::ConfigNotFound
+            ) {
                 // No rate limit config — skip
             } else {
                 return Err(Error::from(rate_err));
             }
         }
 
-        let result = disputes::DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), stake, reason);
+        let result = disputes::DisputeManager::process_dispute_authorized(
+            &env,
+            user.clone(),
+            market_id.clone(),
+            stake,
+            reason,
+        );
         if result.is_ok() {
             // Invalidate analytics cache — dispute stakes have changed.
             analytics::AnalyticsCache::new(&env).invalidate(&market_id);
@@ -4118,15 +4133,24 @@ impl PredictifyHybrid {
         if let Err(rate_err) = crate::rate_limiter::RateLimiter::new(env.clone())
             .rate_limit_disputes(user.clone(), market_id.clone())
         {
-            if matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+            if matches!(
+                rate_err,
+                crate::rate_limiter::RateLimiterError::ConfigNotFound
+            ) {
                 // No rate limit config — skip
             } else {
                 return Err(Error::from(rate_err));
             }
         }
 
-        let result = disputes::DisputeManager::vote_on_dispute(
-            &env, user, market_id.clone(), dispute_id, vote, stake, reason,
+        let result = disputes::DisputeManager::vote_on_dispute_authorized(
+            &env,
+            user,
+            market_id.clone(),
+            dispute_id,
+            vote,
+            stake,
+            reason,
         );
         if result.is_ok() {
             // Invalidate analytics cache — dispute stakes have changed.
@@ -4150,10 +4174,13 @@ impl PredictifyHybrid {
         admin: Address,
         market_id: Symbol,
     ) -> Result<disputes::DisputeResolution, Error> {
-        // The manager authenticates and validates the stored primary admin.
-        // A second require_auth in this frame traps during simulation.
+        Self::require_primary_admin(&env, &admin)?;
 
-        let result = disputes::DisputeManager::resolve_dispute(&env, market_id.clone(), admin.clone());
+        let result = disputes::DisputeManager::resolve_dispute_authorized(
+            &env,
+            market_id.clone(),
+            admin.clone(),
+        );
         if result.is_ok() {
             // Per-market audit entry: DisputeResolved
             let details = Map::new(&env);
@@ -4211,7 +4238,8 @@ impl PredictifyHybrid {
         }
         Self::require_primary_admin(&env, &admin)?;
 
-        let result = fees::FeeManager::collect_fees(&env, admin.clone(), market_id.clone());
+        let result =
+            fees::FeeManager::collect_fees_authorized(&env, admin.clone(), market_id.clone());
         if let Ok(amount) = result {
             // Per-market audit entry: FeesCollected
             let mut details = Map::new(&env);

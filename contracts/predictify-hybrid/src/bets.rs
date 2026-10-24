@@ -1318,7 +1318,11 @@ impl BetValidator {
     ///
     /// - `Error::FeeExceedsMax` - The effective fee exceeds `max_fee_bps`
     pub fn validate_fee_slippage(env: &Env, max_fee_bps: i128) -> Result<(), Error> {
-        let effective_fee_bps = crate::fees::resolve_effective_fee_bps(env)?;
+        let effective_fee_bps = match crate::fees::resolve_effective_fee_bps(env) {
+            Ok(fee_bps) => fee_bps,
+            Err(Error::ConfigNotFound) => crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE,
+            Err(error) => return Err(error),
+        };
 
         if effective_fee_bps > max_fee_bps {
             return Err(Error::FeeExceedsMax);
@@ -1956,7 +1960,7 @@ mod tests {
             // Store platform fee in legacy storage key (used when ConfigManager fails)
             env.storage()
                 .persistent()
-                .set(&Symbol::new(&env, "plat_fee"), &250i128);
+                .set(&Symbol::new(&env, "platform_fee"), &250i128);
 
             // max_fee_bps equal to stored fee should pass
             assert!(BetValidator::validate_fee_slippage(&env, 250).is_ok());

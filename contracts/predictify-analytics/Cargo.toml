@@ -9,17 +9,8 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-[features]
-default = []
-testutils = []
-
 [dependencies]
 soroban-sdk = { workspace = true }
-predictify-hybrid = { path = "../predictify-hybrid", features = ["full"] }
-
-[depdevelopment-dependencies]
-soroban-sdk = { workspace = true, features = ["testutils"] }
-proptest = "1.4"
 
 [dev-dependencies]
-predictify-hybrid = { path = "../predictify-hybrid", features = ["full", "testutils"] }
+soroban-sdk = { workspace = true, features = ["testutils"] }

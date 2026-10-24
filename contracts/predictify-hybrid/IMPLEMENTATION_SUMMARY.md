@@ -187,7 +187,7 @@ All 15 original tests pass unchanged:
    ```rust
    // Migrate market registry (repeat until complete)
    let (migrated, total, complete) = migrate_market_id_registry(admin, 100);
-   
+
    // Migrate admin counters (one call)
    let migrated = migrate_admin_counters(admin);
    ```
