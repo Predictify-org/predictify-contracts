@@ -6,6 +6,7 @@ MAX_SIZE_BYTES="${WASM_SIZE_BUDGET:-131072}"
 WASM_FILE="$ROOT_DIR/target/wasm32v1-none/release/predictify_analytics.wasm"
 
 cd "$ROOT_DIR"
+rustup target add wasm32v1-none
 cargo build --release --target wasm32v1-none -p predictify-analytics
 
 if [[ ! -f "$WASM_FILE" ]]; then

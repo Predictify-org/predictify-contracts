@@ -14,6 +14,7 @@ cargo test -p predictify-hybrid --lib balances    # 5 passed, none ignored
 cargo test -p predictify-hybrid --tests
 cargo test -p hello-world -p oracles
 cargo test -p predictify-analytics
+rustup target add wasm32v1-none
 cargo build --release --target wasm32v1-none -p predictify-analytics
 ./scripts/build_analytics_wasm.sh
 cargo check -p predictify-hybrid --no-default-features
