@@ -781,7 +781,9 @@ mod tests {
             client.check_voting_rate_limit(&user, &market1);
         }
 
-        // Should still be able to vote on market2
-        client.check_voting_rate_limit(&user, &market2);
+        // The voting limit is per user across all markets (#1476), so a vote
+        // on a different market inside the same window is also rejected.
+        let res = client.try_check_voting_rate_limit(&user, &market2);
+        assert_eq!(res, Err(Ok(RateLimiterError::RateLimitExceeded.into())));
     }
 }
