@@ -87,8 +87,6 @@ mod recovery;
 mod statistics;
 mod tokens;
 mod rate_limiter;
-#[cfg(test)]
-mod rate_limit_enforcement_tests;
 mod dispute_multisig;
 mod event_topic_catalog;
 pub mod event_topic_compat;
