@@ -9,17 +9,8 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-[features]
-default = []
-testutils = []
-
 [dependencies]
 soroban-sdk = { workspace = true }
-predictify-hybrid = { path = "../predictify-hybrid", features = ["full"] }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
-proptest = "1.4"
-# `predictify-hybrid` has no `testutils` feature (available: default, full);
-# requesting it broke workspace resolution for every cargo command.
-predictify-hybrid = { path = "../predictify-hybrid", features = ["full"] }

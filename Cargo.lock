@@ -1001,8 +1001,6 @@ dependencies = [
 name = "predictify-analytics"
 version = "0.1.0"
 dependencies = [
- "predictify-hybrid",
- "proptest",
  "soroban-sdk",
 ]
 

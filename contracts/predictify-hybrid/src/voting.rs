@@ -394,10 +394,10 @@ impl VotingManager {
     }
 
     /// Collect platform fees from a market (moved to fees module)
-    /// This function is deprecated and should use FeeManager::collect_fees instead
+    /// This function is deprecated and should use FeeManager::collect_fees_authorized instead
     pub fn collect_fees(env: &Env, admin: Address, market_id: Symbol) -> Result<i128, Error> {
         // Delegate to the fees module
-        crate::fees::FeeManager::collect_fees(env, admin, market_id)
+        crate::fees::FeeManager::collect_fees_authorized(env, admin, market_id)
     }
 
     /// Calculate dynamic dispute threshold for a market using dynamic configuration
@@ -1139,6 +1139,10 @@ pub struct VotingUtils;
 impl VotingUtils {
     /// Transfer stake from user to contract
     pub fn transfer_stake(env: &Env, user: &Address, stake: i128) -> Result<(), Error> {
+        if stake <= 0 {
+            return Err(Error::InvalidInput);
+        }
+
         // Reentrancy guard removed - external call protection no longer needed
         let token_client = MarketUtils::get_token_client(env)?;
         // Soroban token transfer returns (), assume success if no panic

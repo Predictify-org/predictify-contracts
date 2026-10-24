@@ -378,10 +378,27 @@ impl BetManager {
         amount: i128,
         max_fee_bps: i128,
     ) -> Result<Bet, Error> {
+        // The emergency pause is checked before anything else (also re-checked
+        // inside `record_stake`, which `vote` shares).
+        crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "betting")?;
         // Require authentication from the user. This is the single
         // `require_auth` on the bet path: `record_stake` and every helper it
         // calls are internal and never re-authorize.
         user.require_auth();
+
+        // Enforce per-user bet limit. The global per-ledger bet cap is
+        // enforced once inside `record_stake`.
+        let rate_limiter = crate::rate_limiter::RateLimiter::new(env.clone());
+        if let Err(rate_err) = rate_limiter.rate_limit_bets(user.clone()) {
+            if !matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                return Err(Error::from(rate_err));
+            }
+            // ConfigNotFound means no rate limit configured, so skip
+        }
+
+        // Read the market for the fee slippage guard; `record_stake` re-reads
+        // and fully validates it before any write.
+        let market = MarketStateManager::get_market(env, &market_id)?;
 
         // Resolve and validate the fee once before any fund or bet-state write.
         // A zero max_fee_bps keeps the existing "no slippage guard" behaviour.
@@ -621,6 +638,8 @@ impl BetManager {
         let mut markets = soroban_sdk::Vec::new(env);
         let mut total_amount: i128 = 0;
         let mut seen_markets = soroban_sdk::Map::new(env);
+        
+        let rate_limiter = crate::rate_limiter::RateLimiter::new(env.clone());
 
         for bet_data in bets.iter() {
             let (market_id, outcome, amount) = bet_data;
@@ -634,8 +653,15 @@ impl BetManager {
             seen_markets.set(market_id.clone(), true);
 
             // Enforce global per-ledger bet cap for each bet in the batch
-            let rate_limiter = crate::rate_limiter::RateLimiter::new(env.clone());
             rate_limiter.rate_limit_global_bets_per_ledger()?;
+
+            // Enforce per-user bet limit for each bet in the batch (all-or-nothing)
+            if let Err(rate_err) = rate_limiter.rate_limit_bets(user.clone()) {
+                if !matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
+                    return Err(Error::from(rate_err));
+                }
+                // ConfigNotFound means no rate limit configured, so skip
+            }
 
             // Get and validate market
             let market = MarketStateManager::get_market(env, &market_id)?;
@@ -1451,7 +1477,11 @@ impl BetValidator {
     ///
     /// - `Error::FeeExceedsMax` - The effective fee exceeds `max_fee_bps`
     pub fn validate_fee_slippage(env: &Env, max_fee_bps: i128) -> Result<(), Error> {
-        let effective_fee_bps = crate::fees::resolve_effective_fee_bps(env)?;
+        let effective_fee_bps = match crate::fees::resolve_effective_fee_bps(env) {
+            Ok(fee_bps) => fee_bps,
+            Err(Error::ConfigNotFound) => crate::config::DEFAULT_PLATFORM_FEE_PERCENTAGE,
+            Err(error) => return Err(error),
+        };
 
         if effective_fee_bps > max_fee_bps {
             return Err(Error::FeeExceedsMax);
@@ -2089,7 +2119,7 @@ mod tests {
             // Store platform fee in legacy storage key (used when ConfigManager fails)
             env.storage()
                 .persistent()
-                .set(&Symbol::new(&env, "plat_fee"), &250i128);
+                .set(&Symbol::new(&env, "platform_fee"), &250i128);
 
             // max_fee_bps equal to stored fee should pass
             assert!(BetValidator::validate_fee_slippage(&env, 250).is_ok());
