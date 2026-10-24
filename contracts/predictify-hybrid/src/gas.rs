@@ -427,6 +427,10 @@ impl GasTracker {
 /// - Create the guard once at the start of the operation
 /// - Call `check()` at strategic checkpoints (every 10-50 iterations)
 /// - Use a threshold of 50,000-100,000 instructions for safe abort
+/// Conservative per-transaction CPU instruction ceiling used by [`BudgetGuard`]
+/// to compute the remaining budget.
+pub const TX_CPU_INSTRUCTION_LIMIT: u64 = 100_000_000;
+
 #[derive(Clone)]
 pub struct BudgetGuard {
     env: Env,
@@ -470,10 +474,15 @@ impl BudgetGuard {
     /// This is a lightweight call that reads a single value from the host.
     /// It should be called at regular intervals, not on every iteration.
     pub fn check(&self) -> Result<(), Error> {
+        // `threshold_remaining` is the minimum headroom that must still be
+        // available under the per-transaction CPU instruction ceiling. The
+        // previous implementation compared the *consumed* instructions against
+        // the threshold, which aborted any non-trivial payout loop after just
+        // 100k instructions.
         let current = cpu_instruction_cost(&self.env);
-        let consumed = current.saturating_sub(self.start_instructions);
+        let remaining = TX_CPU_INSTRUCTION_LIMIT.saturating_sub(current);
 
-        if consumed >= self.threshold_remaining {
+        if remaining < self.threshold_remaining {
             return Err(Error::OperationWouldExceedBudget);
         }
         Ok(())
