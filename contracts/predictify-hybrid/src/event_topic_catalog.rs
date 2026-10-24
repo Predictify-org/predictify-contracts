@@ -40,6 +40,7 @@ pub fn get_event_topic_catalog(env: &Env) -> Vec<EventTopicEntry> {
         ("accumulate_dispute_fee",     "dispute_fee_accumulated",    "Fired when a dispute fee is accumulated"),
         ("set_governance_min_bet_bps", "governance_min_bet_updated", "Fired when governance updates min bet bps"),
         ("update_rate_limits",         "rate_limits_updated",        "Fired when an admin updates the rate-limit configuration"),
+        ("upgrade",                    "contract_upgraded",          "Fired when the contract WASM is upgraded"),
     ];
 
     for (entrypoint, topic, description) in entries {
@@ -78,6 +79,14 @@ mod tests {
         let env = Env::default();
         let catalog = get_event_topic_catalog(&env);
         let found = catalog.iter().any(|e| e.topic == String::from_str(&env, "rate_limits_updated"));
+        assert!(found);
+    }
+
+    #[test]
+    fn test_catalog_contains_contract_upgraded() {
+        let env = Env::default();
+        let catalog = get_event_topic_catalog(&env);
+        let found = catalog.iter().any(|e| e.topic == String::from_str(&env, "contract_upgraded"));
         assert!(found);
     }
 }
