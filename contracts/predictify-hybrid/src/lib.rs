@@ -184,12 +184,16 @@ mod category_tags_tests;
 #[cfg(test)]
 mod tie_resolution_tests;
 #[cfg(test)]
+mod payout_gating_tests;
+#[cfg(test)]
 mod edge_case_surface_tests;
 #[cfg(test)]
 mod force_resolve_tests;
 // #[cfg(any())]
 // mod statistics_tests;
 
+// Replaced by `payout_gating_tests`, which covers the post-resolution
+// dispute window, one-way resolution, and all payout gates end to end.
 // #[cfg(any())]
 // mod resolution_delay_dispute_window_tests;
 
@@ -1766,6 +1770,49 @@ impl PredictifyHybrid {
         bets::BetAnalytics::calculate_payout_multiplier(&env, &market_id, &outcome)
     }
 
+    /// Shared payout gate for every value-moving exit path.
+    ///
+    /// A payout is allowed only when the market has a final outcome, its
+    /// post-resolution dispute window has closed, and no dispute is still open.
+    /// The window starts at the recorded resolution time (the claim-window
+    /// start written by the resolution entrypoints); legacy resolved markets
+    /// without a recorded time fall back to `end_time`.
+    pub(crate) fn require_payout_allowed(
+        env: &Env,
+        market_id: &Symbol,
+        market: &Market,
+    ) -> Result<(), Error> {
+        // MarketNotResolved has precedence over every other payout error.
+        if market.winning_outcomes.is_none() {
+            return Err(Error::MarketNotResolved);
+        }
+
+        if market.state == MarketState::Cancelled {
+            return Err(Error::InvalidState);
+        }
+
+        // The dispute window is measured from resolution time, not end time.
+        let resolved_at = recovery::UnclaimedWinningsPolicy::get_claim_window_start(
+            env,
+            market_id,
+            market.end_time,
+        );
+        if market.dispute_window_seconds > 0
+            && env.ledger().timestamp()
+                < resolved_at.saturating_add(market.dispute_window_seconds)
+        {
+            return Err(Error::InvalidState);
+        }
+
+        // An open dispute keeps payouts frozen even after the window would
+        // otherwise have closed.
+        if disputes::DisputeValidator::verify_has_active_dispute(env, market_id, market)? {
+            return Err(Error::InvalidState);
+        }
+
+        Ok(())
+    }
+
     /// Allows users to claim their winnings from resolved prediction markets.
     ///
     /// This function enables users who voted for the winning outcome to claim
@@ -1782,8 +1829,9 @@ impl PredictifyHybrid {
     ///
     /// This function will panic with specific errors if:
     /// - `Error::MarketNotFound` - Market with given ID doesn't exist
-    /// - `Error::AlreadyClaimed` - User has already claimed winnings from this market
     /// - `Error::MarketNotResolved` - Market hasn't been resolved yet
+    /// - `Error::InvalidState` - Post-resolution dispute window is still open or a dispute is open
+    /// - `Error::AlreadyClaimed` - User has already claimed winnings from this market
     /// - `Error::NothingToClaim` - User didn't vote or voted for losing outcome
     ///
     /// # Example
@@ -1857,13 +1905,6 @@ impl PredictifyHybrid {
         user.require_auth();
         let gas_marker = GasTracker::start_tracking(&env);
 
-        // ===== REPLAY PROTECTION: VALIDATE NONCE =====
-        // Ensure the provided nonce matches the expected nonce to prevent replays.
-        // Each successful claim increments the stored nonce by 1.
-        if let Err(e) = storage::ClaimNonceManager::validate_nonce(&env, &user, &market_id, claim_nonce) {
-            panic_with_error!(env, e);
-        }
-
         let mut market: Market = env
             .storage()
             .persistent()
@@ -1871,6 +1912,19 @@ impl PredictifyHybrid {
             .unwrap_or_else(|| {
                 panic_with_error!(env, Error::MarketNotFound);
             });
+
+        // Payout error precedence: not resolved, window open, open dispute,
+        // then already claimed.
+        if let Err(e) = Self::require_payout_allowed(&env, &market_id, &market) {
+            panic_with_error!(env, e);
+        }
+
+        // ===== REPLAY PROTECTION: VALIDATE NONCE =====
+        // Ensure the provided nonce matches the expected nonce to prevent replays.
+        // Each successful claim increments the stored nonce by 1.
+        if let Err(e) = storage::ClaimNonceManager::validate_nonce(&env, &user, &market_id, claim_nonce) {
+            panic_with_error!(env, e);
+        }
 
         // Check if user has claimed already (redundant safety check; nonce validation should prevent)
         if market
@@ -1887,13 +1941,6 @@ impl PredictifyHybrid {
             Some(outcomes) => outcomes,
             None => panic_with_error!(env, Error::MarketNotResolved),
         };
-
-        // Enforce dispute window: payouts only after end_time + dispute_window_seconds
-        if market.dispute_window_seconds > 0
-            && env.ledger().timestamp() < market.end_time + market.dispute_window_seconds
-        {
-            panic_with_error!(env, Error::InvalidState);
-        }
 
         // Get user's vote
         let user_outcome = market
@@ -2207,6 +2254,8 @@ impl PredictifyHybrid {
             .persistent()
             .get(&market_id)
             .ok_or(Error::MarketNotFound)?;
+
+        Self::require_payout_allowed(&env, &market_id, &market)?;
 
         let winning_outcomes = market
             .winning_outcomes
@@ -2560,6 +2609,15 @@ impl PredictifyHybrid {
                 panic_with_error!(env, Error::MarketNotFound);
             });
 
+        // Resolution is a one-way transition: a settled or cancelled market can
+        // never be resolved again through this entrypoint.
+        if market.state == MarketState::Cancelled {
+            panic_with_error!(env, Error::InvalidState);
+        }
+        if market.winning_outcomes.is_some() || market.state == MarketState::Resolved {
+            panic_with_error!(env, Error::MarketResolved);
+        }
+
         // Check if market has ended
         if env.ledger().timestamp() < market.end_time {
             panic_with_error!(env, Error::MarketClosed);
@@ -2584,12 +2642,17 @@ impl PredictifyHybrid {
             &market_id,
             env.ledger().timestamp(),
         );
+        // Drop any stale read-cache entry so dispute/claim paths see the
+        // resolved market immediately.
+        markets::MarketReadCache::new(&env).invalidate(&market_id);
         env.storage().persistent().set(&market_id, &market);
 
         // Resolve bets to mark them as won/lost
-        let _ = bets::BetManager::resolve_market_bets(&env, &market_id, &winning_outcomes_vec);
+        bets::BetManager::resolve_market_bets(&env, &market_id, &winning_outcomes_vec)
+            .unwrap_or_else(|e| panic_with_error!(env, e));
 
-        let _ = resolution::ResolutionOutcomeCache::refresh(&env, &market_id, &market);
+        resolution::ResolutionOutcomeCache::refresh(&env, &market_id, &market)
+            .unwrap_or_else(|e| panic_with_error!(env, e));
 
         // Emit market resolved event (simplified to avoid segfaults)
         let oracle_result_str = market
@@ -2620,8 +2683,9 @@ impl PredictifyHybrid {
             &reason,
         );
 
-        // Automatically distribute payouts to winners after resolution
-        let _ = Self::distribute_payouts(env.clone(), market_id.clone());
+        // Payouts are intentionally NOT distributed here. Distribution is a
+        // separate call that only succeeds after the post-resolution dispute
+        // window has closed (see `require_payout_allowed`).
 
         // Invalidate analytics cache — market state and winning_outcomes have changed.
         analytics::AnalyticsCache::new(&env).invalidate(&market_id);
@@ -2732,6 +2796,14 @@ impl PredictifyHybrid {
                 panic_with_error!(env, Error::MarketNotFound);
             });
 
+        // Resolution is a one-way transition.
+        if market.state == MarketState::Cancelled {
+            panic_with_error!(env, Error::InvalidState);
+        }
+        if market.winning_outcomes.is_some() || market.state == MarketState::Resolved {
+            panic_with_error!(env, Error::MarketResolved);
+        }
+
         // Check if market has ended
         if env.ledger().timestamp() < market.end_time {
             panic_with_error!(env, Error::MarketClosed);
@@ -2756,12 +2828,17 @@ impl PredictifyHybrid {
             &market_id,
             env.ledger().timestamp(),
         );
+        // Drop any stale read-cache entry so dispute/claim paths see the
+        // resolved market immediately.
+        markets::MarketReadCache::new(&env).invalidate(&market_id);
         env.storage().persistent().set(&market_id, &market);
 
         // Resolve bets to mark them as won/lost
-        let _ = bets::BetManager::resolve_market_bets(&env, &market_id, &winning_outcomes);
+        bets::BetManager::resolve_market_bets(&env, &market_id, &winning_outcomes)
+            .unwrap_or_else(|e| panic_with_error!(env, e));
 
-        let _ = resolution::ResolutionOutcomeCache::refresh(&env, &market_id, &market);
+        resolution::ResolutionOutcomeCache::refresh(&env, &market_id, &market)
+            .unwrap_or_else(|e| panic_with_error!(env, e));
 
         // Emit market resolved event
         let primary_outcome = winning_outcomes.get(0).unwrap().clone();
@@ -2792,8 +2869,8 @@ impl PredictifyHybrid {
             &reason,
         );
 
-        // Automatically distribute payouts (handles split pool for ties)
-        let _ = Self::distribute_payouts(env.clone(), market_id.clone());
+        // Payouts are intentionally NOT distributed here; see
+        // `require_payout_allowed` and the separate `distribute_payouts` call.
 
         // Invalidate analytics cache — market state and winning_outcomes have changed.
         analytics::AnalyticsCache::new(&env).invalidate(&market_id);
@@ -2819,11 +2896,13 @@ impl PredictifyHybrid {
         }
     }
 
-    /// Force-resolves a market bypassing time/state constraints, with idempotency-key
-    /// replay protection and audit trail.
+    /// Force-resolves an unresolved market bypassing time constraints, with
+    /// idempotency-key replay protection and audit trail.
     ///
-    /// This admin-only entrypoint resolves a market **regardless** of its current state
-    /// or whether `end_time` has been reached. Every call must supply a non-empty `reason`
+    /// This admin-only entrypoint can resolve a market **before** its `end_time`
+    /// (for example, an active, ended, or disputed market). Resolution remains a
+    /// one-way transition: a market that is already resolved cannot be re-settled
+    /// and a cancelled market cannot be revived. Every call must supply a non-empty `reason`
     /// and a unique `idempotency_key` (a string, e.g. a UUID) scoped to the market.
     ///
     /// # Parameters
@@ -2840,6 +2919,8 @@ impl PredictifyHybrid {
     /// * `Ok(())` - Force-resolve succeeded
     /// * `Err(Error::Unauthorized)` - Caller is not the contract primary admin
     /// * `Err(Error::MarketNotFound)` - Market does not exist
+    /// * `Err(Error::MarketResolved)` - Market has already been resolved
+    /// * `Err(Error::InvalidState)` - Market was cancelled
     /// * `Err(Error::InvalidOutcome)` - One or more outcomes are invalid for this market
     /// * `Err(Error::InvalidInput)` - Empty outcomes vector
     /// * `Err(Error::ForceResolveReasonEmpty)` - Reason string is empty
@@ -2891,6 +2972,16 @@ impl PredictifyHybrid {
             return Err(Error::ForceResolveReplayed);
         }
 
+        // Force-resolve bypasses time constraints, but it is still a one-way
+        // transition. It cannot re-settle a resolved market or revive a
+        // cancelled one.
+        if market.state == MarketState::Cancelled {
+            return Err(Error::InvalidState);
+        }
+        if market.winning_outcomes.is_some() || market.state == MarketState::Resolved {
+            return Err(Error::MarketResolved);
+        }
+
         let old_state = market.state.clone();
 
         market.winning_outcomes = Some(winning_outcomes.clone());
@@ -2901,6 +2992,9 @@ impl PredictifyHybrid {
             &market_id,
             env.ledger().timestamp(),
         );
+        // Drop any stale read-cache entry so dispute/claim paths see the
+        // resolved market immediately.
+        markets::MarketReadCache::new(&env).invalidate(&market_id);
 
         env.storage().persistent().set(&market_id, &market);
 
@@ -2912,8 +3006,8 @@ impl PredictifyHybrid {
             &winning_outcomes,
         );
 
-        let _ = bets::BetManager::resolve_market_bets(&env, &market_id, &winning_outcomes);
-        let _ = resolution::ResolutionOutcomeCache::refresh(&env, &market_id, &market);
+        bets::BetManager::resolve_market_bets(&env, &market_id, &winning_outcomes)?;
+        resolution::ResolutionOutcomeCache::refresh(&env, &market_id, &market)?;
 
         let primary_outcome = winning_outcomes.get(0).unwrap().clone();
 
@@ -2980,8 +3074,8 @@ impl PredictifyHybrid {
             );
         }
 
-        // Auto-distribute payouts
-        let _ = Self::distribute_payouts(env.clone(), market_id);
+        // Payouts are intentionally NOT distributed here; callers must wait for
+        // the post-resolution dispute window and call `distribute_payouts`.
 
         Ok(())
     }
@@ -4424,11 +4518,12 @@ impl PredictifyHybrid {
                 panic_with_error!(env, Error::MarketNotFound);
             });
 
-        // ── Require resolved ───────────────────────────────────────────────────
-        let winning_outcomes = match &market.winning_outcomes {
-            Some(outcomes) => outcomes,
-            None => return Err(Error::MarketNotResolved),
-        };
+        // ── Payout gate: resolved + post-resolution window closed + no dispute ─
+        Self::require_payout_allowed(&env, &market_id, &market)?;
+        let winning_outcomes = market
+            .winning_outcomes
+            .as_ref()
+            .ok_or(Error::MarketNotResolved)?;
 
         // ── Load bettor registry ───────────────────────────────────────────────
         let bettors = BetStorage::get_all_bets_for_market(&env, &market_id);
@@ -4568,7 +4663,7 @@ impl PredictifyHybrid {
                         .unwrap_or(false)
                     {
                         bet.status = BetStatus::Won;
-                        let _ = BetStorage::store_bet(&env, &bet);
+                        BetStorage::store_bet(&env, &bet)?;
                     } else if bet.amount > 0 {
                         let user_share = (bet.amount
                             .checked_mul(fee_denominator - fee_percent)
@@ -4590,7 +4685,7 @@ impl PredictifyHybrid {
                                 .ok_or(Error::Overflow)?;
 
                             bet.status = BetStatus::Won;
-                            let _ = BetStorage::store_bet(&env, &bet);
+                            BetStorage::store_bet(&env, &bet)?;
 
                             match BalanceStorage::add_balance(
                                 &env,
@@ -4614,7 +4709,7 @@ impl PredictifyHybrid {
                     // Losing bet — mark as Lost
                     if matches!(bet.status, BetStatus::Active) {
                         bet.status = BetStatus::Lost;
-                        let _ = BetStorage::store_bet(&env, &bet);
+                        BetStorage::store_bet(&env, &bet)?;
                     }
                 }
             }

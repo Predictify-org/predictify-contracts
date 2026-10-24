@@ -248,7 +248,7 @@ fn test_force_resolve_idempotency_key_replay() {
 
 #[test]
 #[ignore = "known failing: pre-existing test/API drift, see docs/TESTING.md"]
-fn test_force_resolve_different_keys_same_market() {
+fn test_force_resolve_different_keys_same_market_is_rejected() {
     let ctx = Ctx::new();
     let market_id = ctx.create_market();
 
@@ -262,18 +262,18 @@ fn test_force_resolve_different_keys_same_market() {
         )
         .unwrap();
 
-    ctx.client()
-        .try_force_resolve_market(
-            &ctx.admin,
-            &market_id,
-            &outcomes(&ctx.env, &["no"]),
-            &reason(&ctx.env, "Second"),
-            &key(&ctx.env, "key-b"),
-        )
-        .unwrap();
+    // Force-resolve bypasses time constraints, not the one-way resolution rule.
+    let result = ctx.client().try_force_resolve_market(
+        &ctx.admin,
+        &market_id,
+        &outcomes(&ctx.env, &["no"]),
+        &reason(&ctx.env, "Second"),
+        &key(&ctx.env, "key-b"),
+    );
+    assert_eq!(result, Err(Ok(Error::MarketResolved)));
 
     let market = ctx.client().get_market(&market_id).unwrap();
-    assert_eq!(market.winning_outcomes, Some(outcomes(&ctx.env, &["no"])));
+    assert_eq!(market.winning_outcomes, Some(outcomes(&ctx.env, &["yes"])));
 }
 
 #[test]
