@@ -706,6 +706,7 @@ impl MarketIdGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::alloc::string::ToString;
     use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
 
     // ── Helpers ──────────────────────────────────────────────────────────────

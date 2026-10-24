@@ -6,6 +6,9 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 extern crate alloc;
 
 #[cfg(test)]
+extern crate std;
+
+#[cfg(test)]
 pub(crate) mod testutil;
 
 // ===== MODULE DECLARATIONS =====
