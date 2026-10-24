@@ -4,6 +4,8 @@ The `predictify-analytics` contract provides read-only cross-contract views over
 market, voting, dispute, participation, fee, comparison, and oracle analytics
 from `predictify-hybrid`. It has no independent state; queries take the core
 contract address explicitly and forward the core contract's returned data.
+Its ABI-compatible client types are defined locally so the analytics WASM does
+not link the full hybrid contract implementation.
 See [the synchronization report](test-output/pr-1470-master-sync.md) for the
 upstream package issue and its repair.
 
