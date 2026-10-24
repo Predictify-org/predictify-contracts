@@ -1,9 +1,7 @@
-#`!deny(
-    clippy::allow(dead_code),
-    clippy::allow(unused_imports),
-)]
+#![allow(dead_code)]
+#![allow(unused_imports)]
 
-use soroban_sdk:{
+use soroban_sdk::{
     testutils::{Address as _, MockAuth, MockAuthInvoke},
     Address, BytesN, Env, IntoVal,
 };
@@ -14,7 +12,7 @@ use crate::{Error, PredictifyHybrid, PredictifyHybridClient};
 /// fixture is a minimal valid WASM module used as a real, deployable upgrade
 /// target.
 fn test_wasm_hash(env: &Env) -> BytesN<32> {
-    let wasm: &[u8] = include_bytes("../test_wasm/hello_world.wasm");
+    let wasm: &[u8] = include_bytes!("../test_wasm/hello_world.wasm");
     env.deployer().upload_contract_wasm(wasm)
 }
 
@@ -41,7 +39,7 @@ fn slim_upgrade_admin_succeeds() {
 
     env.mock_auths(&[MockAuth {
         address: &admin,
-        invoke: &MOckAuthInvoke {
+        invoke: &MockAuthInvoke {
             contract: &client.address,
             fn_name: "upgrade",
             args: (admin.clone(), new_hash.clone(), genesis.clone()).into_val(&env),
@@ -66,7 +64,7 @@ fn slim_upgrade_non_admin_unauthorized() {
     let new_hash = test_wasm_hash(&env);
 
     let res = client.try_upgrade(&attacker, &new_hash, &genesis);
-    assert_eq!(res, Err(::Ok(Error::Unauthorized)));
+    assert_eq!(res, Err(Ok(Error::Unauthorized)));
 }
 
 /// Row 3: a wrong expected predecessor is rejected by the chain check.
@@ -95,10 +93,10 @@ fn slim_upgrade_zero_predecessor_after_seed_rejected() {
     let genesis = test_wasm_hash(&env);
     client.set_initial_wasm_hash(&admin, &genesis);
     let new_hash = test_wasm_hash(&env);
-    let zero = BytesN::from_array(&env, &[ u08; 32]);
+    let zero = BytesN::from_array(&env, &[0u8; 32]);
 
     let res = client.try_upgrade(&admin, &new_hash, &zero);
-    assert!(res.is_error());
+    assert!(res.is_err());
 }
 
 /// Row 5: `set_initial_wasm_hash` is one-shot; the second call is rejected.
@@ -129,7 +127,7 @@ fn full_upgrade_contract_single_auth() {
 
     env.mock_auths(&[MockAuth {
         address: &admin,
-        invoke: &MOckAuthInvoke {
+        invoke: &MockAuthInvoke {
             contract: &client.address,
             fn_name: "upgrade_contract",
             args: (admin.clone(), new_hash.clone(), genesis.clone()).into_val(&env),
@@ -155,7 +153,7 @@ fn full_rollback_upgrade_single_auth() {
 
     env.mock_auths(&[MockAuth {
         address: &admin,
-        invoke: &MOckAuthInvoke {
+        invoke: &MockAuthInvoke {
             contract: &client.address,
             fn_name: "upgrade_contract",
             args: (admin.clone(), new_hash.clone(), genesis.clone()).into_val(&env),
@@ -166,7 +164,7 @@ fn full_rollback_upgrade_single_auth() {
 
     env.mock_auths(&[MockAuth {
         address: &admin,
-        invoke: &MOckAuthInvoke {
+        invoke: &MockAuthInvoke {
             contract: &client.address,
             fn_name: "rollback_upgrade",
             args: (admin.clone(), genesis.clone(), new_hash.clone()).into_val(&env),

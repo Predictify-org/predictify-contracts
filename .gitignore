@@ -8,7 +8,7 @@ temp_auto_push.bat
 contracts/predictify-hybrid/test_snapshots
 
 # Environment variables (never commit secrets!)
-.env
-.env.*
 *.env.gitignore
 branch_structure.json
+config.bat
+node_modules
