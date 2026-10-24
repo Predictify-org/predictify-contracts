@@ -45,27 +45,40 @@ fn fee_setter_updates_canonical_config_and_legacy_mirror() {
 #[test]
 fn resolver_prefers_canonical_config_over_legacy_mirror() {
     let env = Env::default();
-    let mut config = ConfigManager::get_development_config(&env);
-    config.fees.platform_fee_percentage = 500;
-    ConfigManager::store_config(&env, &config).unwrap();
-    env.storage()
-        .persistent()
-        .set(&Symbol::new(&env, "platform_fee"), &200i128);
+    let contract_id = env.register(PredictifyHybrid, ());
+    let test_market = market(&env);
 
-    assert_eq!(effective_fee_bps(&env, &market(&env)), Ok(500));
+    env.as_contract(&contract_id, || {
+        let mut config = ConfigManager::get_development_config(&env);
+        config.fees.platform_fee_percentage = 500;
+        ConfigManager::store_config(&env, &config).unwrap();
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "platform_fee"), &200i128);
+
+        assert_eq!(effective_fee_bps(&env, &test_market), Ok(500));
+    });
 }
 
 #[test]
 fn resolver_uses_legacy_compatibility_value_only_without_canonical_config() {
     let env = Env::default();
-    env.storage()
-        .persistent()
-        .set(&Symbol::new(&env, "platform_fee"), &400i128);
-    assert_eq!(effective_fee_bps(&env, &market(&env)), Ok(400));
+    let contract_id = env.register(PredictifyHybrid, ());
+    let test_market = market(&env);
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "platform_fee"), &400i128);
+        assert_eq!(effective_fee_bps(&env, &test_market), Ok(400));
+    });
 
     let missing_env = Env::default();
-    assert_eq!(
-        effective_fee_bps(&missing_env, &market(&missing_env)),
-        Err(Error::ConfigNotFound)
-    );
+    let missing_contract_id = missing_env.register(PredictifyHybrid, ());
+    let missing_market = market(&missing_env);
+    missing_env.as_contract(&missing_contract_id, || {
+        assert_eq!(
+            effective_fee_bps(&missing_env, &missing_market),
+            Err(Error::ConfigNotFound)
+        );
+    });
 }

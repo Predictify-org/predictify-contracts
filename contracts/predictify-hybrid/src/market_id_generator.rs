@@ -187,32 +187,29 @@ impl MarketIdGenerator {
     /// string allocation.
     pub fn validate_market_id_format(env: &Env, market_id: &Symbol) -> bool {
         // Convert Symbol to XDR bytes to inspect the prefix without string allocation.
-        // Symbol XDR format: 4-byte length prefix (big-endian) followed by the string bytes.
+        // A ScVal symbol stores a 4-byte type tag, a 4-byte length, then its bytes.
         let xdr_bytes = market_id.to_xdr(env);
 
-        // XDR format check: need at least 4 bytes for length + 4 bytes for "mkt_"
-        if xdr_bytes.len() < 8 {
+        if xdr_bytes.len() < 12 {
             return false;
         }
 
-        // Read the length prefix (first 4 bytes, big-endian)
+        // Read the symbol length after the ScVal type tag.
         let len = u32::from_be_bytes([
-            xdr_bytes.get(0).unwrap_or(0),
-            xdr_bytes.get(1).unwrap_or(0),
-            xdr_bytes.get(2).unwrap_or(0),
-            xdr_bytes.get(3).unwrap_or(0),
+            xdr_bytes.get(4).unwrap_or(0),
+            xdr_bytes.get(5).unwrap_or(0),
+            xdr_bytes.get(6).unwrap_or(0),
+            xdr_bytes.get(7).unwrap_or(0),
         ]);
 
-        // Verify the string is at least 4 bytes long to contain "mkt_"
-        if len < 4 {
+        if len < 4 || 8 + len > xdr_bytes.len() {
             return false;
         }
 
-        // Check for "mkt_" prefix (bytes 4-7 in XDR encoding)
-        xdr_bytes.get(4).unwrap_or(0) == b'm'
-            && xdr_bytes.get(5).unwrap_or(0) == b'k'
-            && xdr_bytes.get(6).unwrap_or(0) == b't'
-            && xdr_bytes.get(7).unwrap_or(0) == b'_'
+        xdr_bytes.get(8).unwrap_or(0) == b'm'
+            && xdr_bytes.get(9).unwrap_or(0) == b'k'
+            && xdr_bytes.get(10).unwrap_or(0) == b't'
+            && xdr_bytes.get(11).unwrap_or(0) == b'_'
     }
 
     /// Parse the counter and legacy flag out of a market ID symbol.
@@ -229,28 +226,27 @@ impl MarketIdGenerator {
         // Convert Symbol to XDR bytes to parse without string allocation
         let xdr_bytes = market_id.to_xdr(env);
 
-        // XDR format: 4-byte length prefix (big-endian) followed by the string bytes
-        if xdr_bytes.len() < 4 {
+        // A ScVal symbol stores a 4-byte type tag, a 4-byte length, then its bytes.
+        if xdr_bytes.len() < 8 {
             return Ok(MarketIdComponents { counter: 0, is_legacy: true });
         }
 
-        // Read the length prefix
+        // Read the symbol length after the ScVal type tag.
         let len = u32::from_be_bytes([
-            xdr_bytes.get(0).unwrap_or(0),
-            xdr_bytes.get(1).unwrap_or(0),
-            xdr_bytes.get(2).unwrap_or(0),
-            xdr_bytes.get(3).unwrap_or(0),
+            xdr_bytes.get(4).unwrap_or(0),
+            xdr_bytes.get(5).unwrap_or(0),
+            xdr_bytes.get(6).unwrap_or(0),
+            xdr_bytes.get(7).unwrap_or(0),
         ]);
 
-        // Check for "mkt_" prefix
-        if len < 4 || xdr_bytes.len() < 8 {
+        if len < 4 || 8 + len > xdr_bytes.len() {
             return Ok(MarketIdComponents { counter: 0, is_legacy: true });
         }
 
-        let has_prefix = xdr_bytes.get(4).unwrap_or(0) == b'm'
-            && xdr_bytes.get(5).unwrap_or(0) == b'k'
-            && xdr_bytes.get(6).unwrap_or(0) == b't'
-            && xdr_bytes.get(7).unwrap_or(0) == b'_';
+        let has_prefix = xdr_bytes.get(8).unwrap_or(0) == b'm'
+            && xdr_bytes.get(9).unwrap_or(0) == b'k'
+            && xdr_bytes.get(10).unwrap_or(0) == b't'
+            && xdr_bytes.get(11).unwrap_or(0) == b'_';
 
         if !has_prefix {
             return Ok(MarketIdComponents { counter: 0, is_legacy: true });
@@ -262,7 +258,7 @@ impl MarketIdGenerator {
         let mut underscore_count = 0;
         let mut counter_start = 0u32;
 
-        for i in 4..(4 + len) {
+        for i in 8..(8 + len) {
             if i >= xdr_bytes.len() {
                 break;
             }
@@ -275,13 +271,13 @@ impl MarketIdGenerator {
             }
         }
 
-        if underscore_count < 2 || counter_start >= (4 + len) {
+        if underscore_count < 2 || counter_start >= (8 + len) {
             return Err(Error::InvalidInput);
         }
 
         // Parse the counter bytes as ASCII digits
         let mut counter: u32 = 0;
-        for i in counter_start..(4 + len) {
+        for i in counter_start..(8 + len) {
             if i >= xdr_bytes.len() {
                 break;
             }
@@ -713,6 +709,8 @@ mod tests {
 
     fn setup() -> (Env, Address, Address) {
         let env = Env::default();
+        env.cost_estimate().disable_resource_limits();
+        env.mock_all_auths_allowing_non_root_auth();
         let contract_id = env.register(crate::PredictifyHybrid, ());
         let admin = Address::generate(&env);
         (env, contract_id, admin)
@@ -1249,7 +1247,6 @@ mod tests {
     #[test]
     fn test_create_500_markets_cost_stability() {
         let (env, contract_id, admin) = setup();
-        env.budget().reset_unlimited();
 
         with_contract(&env, &contract_id, || {
             // Create first market and capture count

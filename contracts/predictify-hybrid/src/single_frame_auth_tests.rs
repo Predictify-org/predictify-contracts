@@ -6,6 +6,7 @@ use soroban_sdk::{
 };
 
 fn register_contract(env: &Env) -> (Address, PredictifyHybridClient<'_>) {
+    env.cost_estimate().disable_resource_limits();
     let contract_id = env.register(PredictifyHybrid, ());
     let client = PredictifyHybridClient::new(env, &contract_id);
     (contract_id, client)

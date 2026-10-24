@@ -2520,6 +2520,8 @@ mod checked_arithmetic_tests {
             env.storage()
                 .persistent()
                 .set(&Symbol::new(&env, "Admin"), &admin);
+            let config = crate::config::ConfigManager::get_development_config(&env);
+            crate::config::ConfigManager::store_config(&env, &config).unwrap();
             MarketStateManager::update_market(&env, &market_id, &market);
 
             let result = FeeManager::collect_fees_authorized(&env, admin.clone(), market_id.clone());

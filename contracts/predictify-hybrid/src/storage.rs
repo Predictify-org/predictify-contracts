@@ -1779,7 +1779,7 @@ mod tests {
 
         env.as_contract(&contract_id, || {
             let mut config = StorageOptimizer::get_storage_config(&env);
-            config.balance_ttl_ledgers = 10_000;
+            config.balance_ttl_ledgers = BALANCE_TTL_LEDGERS + 10_000;
             StorageOptimizer::update_storage_config(&env, &config).unwrap();
 
             BalanceStorage::set_balance(

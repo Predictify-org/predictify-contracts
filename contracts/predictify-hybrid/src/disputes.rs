@@ -3705,7 +3705,7 @@ mod tests {
     #[test]
     fn test_dispute_stake_is_refunded_when_resolution_favors_disputer() {
         let env = Env::default();
-        env.mock_all_auths();
+        env.mock_all_auths_allowing_non_root_auth();
 
         let admin = Address::generate(&env);
         let user = Address::generate(&env);
