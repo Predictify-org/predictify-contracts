@@ -1,11 +1,11 @@
-use predictify_hybrid::types::{OracleConfig, OracleProvider};
+use predictify_hybrid::types::{OracleConfig, OracleProvider, ReflectorAsset};
 use predictify_hybrid::{PredictifyHybrid, PredictifyHybridClient};
 use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
 use soroban_sdk::token::StellarAssetClient;
 use soroban_sdk::{Address, Env, String, Symbol};
 
-const ORACLE_ADDRESS: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
-const INITIAL_BALANCE: i128 = 1_000;
+const ORACLE_ADDRESS: &str = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+const INITIAL_BALANCE: i128 = 1_000_000_000;
 
 fn setup() -> (Env, Address, Address, Address, Address) {
     let env = Env::default();
@@ -26,7 +26,7 @@ fn setup() -> (Env, Address, Address, Address, Address) {
     });
 
     let client = PredictifyHybridClient::new(&env, &contract_id);
-    client.initialize(&admin, &Some(0i128), &None);
+    client.initialize(&admin, &None, &None);
 
     StellarAssetClient::new(&env, &token_id).mint(&user, &INITIAL_BALANCE);
 
@@ -109,7 +109,7 @@ fn stake_is_conserved_independently_per_market() {
         &user,
         &first_market,
         &String::from_str(&env, "yes"),
-        &100i128,
+        &100_000_000i128,
         &1000,
     );
     let first_after_first_bet = client
@@ -121,14 +121,14 @@ fn stake_is_conserved_independently_per_market() {
         .expect("second market should exist")
         .total_staked;
 
-    assert_eq!(first_after_first_bet, 100);
+    assert_eq!(first_after_first_bet, 100_000_000);
     assert_eq!(second_after_first_bet, 0);
 
     client.place_bet(
         &user,
         &second_market,
         &String::from_str(&env, "no"),
-        &250i128,
+        &250_000_000i128,
         &1000,
     );
     let first_after_second_bet = client
@@ -140,11 +140,11 @@ fn stake_is_conserved_independently_per_market() {
         .expect("second market should exist")
         .total_staked;
 
-    assert_eq!(first_after_second_bet, 100);
-    assert_eq!(second_after_second_bet, 250);
+    assert_eq!(first_after_second_bet, 100_000_000);
+    assert_eq!(second_after_second_bet, 250_000_000);
     assert_eq!(
         first_after_second_bet + second_after_second_bet,
-        350,
+        350_000_000,
         "the aggregate stake must equal the sum of stakes assigned to both markets"
     );
 }
@@ -167,69 +167,43 @@ fn payout_remainder_is_conserved() {
         "BTC",
     );
 
-    // Winning stakes: user=1, user2=2, total winning pool=3.
-    // Losing stake: user3=97, total staked=100.
-    // Proportional payout floors to:
-    //   user  = 1 * 100 / 3 = 33
-    //   user2 = 2 * 100 / 3 = 66
-    // Remainder = 1, which must be allocated to the admin.
-    client.place_bet(
-        &user,
-        &market,
-        &String::from_str(&env, "yes"),
-        &1i128,
-        &1000,
-    );
-    client.place_bet(
-        &user2,
-        &market,
-        &String::from_str(&env, "yes"),
-        &2i128,
-        &1000,
-    );
-    client.place_bet(
-        &user3,
-        &market,
-        &String::from_str(&env, "no"),
-        &97i128,
-        &1000,
-    );
+    // Winning stakes are 1M and 2M, losing stake 97M. After the default 2%
+    // fee, floored payouts are 32,666,666 and 65,333,333: remainder = 1.
+    for (bettor, outcome, amount) in [
+        (&user, "yes", 1_000_000i128),
+        (&user2, "yes", 2_000_000i128),
+        (&user3, "no", 97_000_000i128),
+    ] {
+        client.place_bet(bettor, &market, &String::from_str(&env, outcome), &amount, &1000);
+    }
 
-    let market_data = client.get_market(&market).expect("market should exist");
-    assert_eq!(market_data.total_staked, 100);
-
-    let user_balance_before = StellarAssetClient::new(&env, &token_id).balance(&user);
-    let user2_balance_before = StellarAssetClient::new(&env, &token_id).balance(&user2);
-    let admin_balance_before = StellarAssetClient::new(&env, &token_id).balance(&admin);
-    let contract_balance_before = StellarAssetClient::new(&env, &token_id).balance(&contract_id);
-    assert_eq!(contract_balance_before, 100);
+    assert_eq!(client.get_market(&market).unwrap().total_staked, 100_000_000);
+    let token = soroban_sdk::token::Client::new(&env, &token_id);
+    assert_eq!(token.balance(&contract_id), 100_000_000);
 
     advance_ledger(&env, 31 * 24 * 60 * 60);
     client.resolve_market_manual(&admin, &market, &String::from_str(&env, "yes"));
+    // Manual resolution automatically distributes into withdrawable balances.
+    let distributed = client.get_balance(&user, &ReflectorAsset::Stellar).amount
+        + client.get_balance(&user2, &ReflectorAsset::Stellar).amount;
+    assert_eq!(distributed, 97_999_999);
+    let fee = client.collect_fees(&admin, &market);
+    assert_eq!(fee, 2_000_000);
+    let vault: i128 = env.as_contract(&contract_id, || {
+        env.storage().persistent().get(&Symbol::new(&env, "tot_fees")).unwrap()
+    });
+    assert_eq!(vault, fee + 1, "rounding remainder is accounted for in the fee vault");
 
-    client.claim_winnings(&user, &market, &0u64);
-    client.claim_winnings(&user2, &market, &0u64);
-
-    let user_claimed = StellarAssetClient::new(&env, &token_id).balance(&user) - user_balance_before;
-    let user2_claimed =
-        StellarAssetClient::new(&env, &token_id).balance(&user2) - user2_balance_before;
-    let admin_claimed =
-        StellarAssetClient::new(&env, &token_id).balance(&admin) - admin_balance_before;
-    let contract_balance_after = StellarAssetClient::new(&env, &token_id).balance(&contract_id);
-
-    assert_eq!(user_claimed, 33, "first winner receives the floored share");
-    assert_eq!(user2_claimed, 66, "second winner receives the floored share");
-    assert_eq!(
-        user_claimed + user2_claimed,
-        99,
-        "payouts sum to the distributable amount"
-    );
-    assert_eq!(
-        admin_claimed, 1,
-        "the one-wei remainder is allocated to the admin instead of being locked"
-    );
-    assert_eq!(
-        contract_balance_after, 0,
-        "no funds remain stranded in the contract"
-    );
+    for (winner, expected) in [(&user, 32_666_666i128), (&user2, 65_333_333i128)] {
+        assert_eq!(client.get_balance(winner, &ReflectorAsset::Stellar).amount, expected);
+        let before = token.balance(winner);
+        client.withdraw(winner, &ReflectorAsset::Stellar, &expected);
+        assert_eq!(token.balance(winner) - before, expected);
+        assert_eq!(client.get_balance(winner, &ReflectorAsset::Stellar).amount, 0);
+    }
+    assert_eq!(distributed + vault, 100_000_000, "all stakes remain accounted for");
+    assert_eq!(token.balance(&contract_id), vault, "only tracked fees remain in custody");
+    assert_eq!(client.distribute_payouts(&market), 0, "payout replay cannot create new credits");
+    assert_eq!(client.collect_fees(&admin, &market), 0, "fee replay cannot duplicate the remainder");
+    assert_eq!(env.as_contract(&contract_id, || env.storage().persistent().get::<_, i128>(&Symbol::new(&env, "tot_fees")).unwrap()), vault);
 }

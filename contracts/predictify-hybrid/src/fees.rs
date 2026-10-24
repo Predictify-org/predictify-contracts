@@ -6,6 +6,39 @@ use crate::reentrancy_guard::ReentrancyGuard;
 use crate::types::Market;
 use crate::reentrancy_guard::GuardError as ReentrancyError;
 
+/// Resolve the platform fee used by all market payout paths.
+///
+/// Fees are applied at resolution time, so changing the canonical platform fee
+/// affects open markets consistently regardless of how winners are paid. The
+/// legacy storage key is consulted only when the canonical config is absent,
+/// allowing upgraded deployments to read their pre-config fee value.
+pub(crate) fn resolve_effective_fee_bps(env: &Env) -> Result<i128, Error> {
+    let fee_bps = match crate::config::ConfigManager::get_config(env) {
+        Ok(config) => {
+            if !config.fees.fees_enabled {
+                0
+            } else {
+                config.fees.platform_fee_percentage
+            }
+        }
+        Err(Error::ConfigNotFound) => env
+            .storage()
+            .persistent()
+            .get::<Symbol, i128>(&Symbol::new(env, "platform_fee"))
+            .ok_or(Error::ConfigNotFound)?,
+        Err(error) => return Err(error),
+    };
+
+    if !(0..=1000).contains(&fee_bps) {
+        return Err(Error::InvalidFeeConfig);
+    }
+    Ok(fee_bps)
+}
+
+pub fn effective_fee_bps(env: &Env, _market: &Market) -> Result<i128, Error> {
+    resolve_effective_fee_bps(env)
+}
+
 /// Fee management system for Predictify Hybrid contract
 ///
 /// This module provides a comprehensive fee management system with:
@@ -1081,7 +1114,7 @@ impl FeeCalculator {
         Ok(fee_amount)
     }
 
-    /// Calculate platform fee for a market, using the fee config active when the earliest bet was placed.
+    /// Calculate platform fee using the current canonical platform fee.
     pub fn calculate_platform_fee_with_env(
         env: &Env,
         market_id: &Symbol,
@@ -1091,23 +1124,10 @@ impl FeeCalculator {
             return Err(Error::InvalidFeeConfig);
         }
 
-        // Find the earliest bet timestamp for the market
-        let users = crate::bets::BetStorage::get_all_bets_for_market(env, market_id);
-        let mut earliest_timestamp = env.ledger().timestamp();
-        for user in users.iter() {
-            if let Some(bet) = crate::bets::BetStorage::get_bet(env, market_id, &user) {
-                if bet.timestamp < earliest_timestamp {
-                    earliest_timestamp = bet.timestamp;
-                }
-            }
-        }
 
-        let fee_percentage = FeeManager::get_fee_percentage_for_timestamp(env, earliest_timestamp);
+
+        let fee_percentage = effective_fee_bps(env, market)?;
         let fee_amount = Self::checked_bps_floor(market.total_staked, fee_percentage)?;
-
-        if fee_amount < MIN_FEE_AMOUNT {
-            return Err(Error::InsufficientStake);
-        }
 
         // Ensure fee never exceeds the total staked amount (net winnings pool)
         if fee_amount > market.total_staked {
@@ -1117,7 +1137,7 @@ impl FeeCalculator {
         Ok(fee_amount)
     }
 
-    /// Calculate fee breakdown for a market using env to lookup historical fee config
+    /// Calculate fee breakdown using the canonical platform fee.
     pub fn calculate_fee_breakdown_with_env(
         env: &Env,
         market_id: &Symbol,
@@ -1128,17 +1148,7 @@ impl FeeCalculator {
         let platform_fee = fee_amount;
         let user_payout_amount = Self::checked_fee_sub(total_staked, fee_amount)?;
 
-        // Find the earliest bet timestamp for the market
-        let users = crate::bets::BetStorage::get_all_bets_for_market(env, market_id);
-        let mut earliest_timestamp = env.ledger().timestamp();
-        for user in users.iter() {
-            if let Some(bet) = crate::bets::BetStorage::get_bet(env, market_id, &user) {
-                if bet.timestamp < earliest_timestamp {
-                    earliest_timestamp = bet.timestamp;
-                }
-            }
-        }
-        let fee_percentage = FeeManager::get_fee_percentage_for_timestamp(env, earliest_timestamp);
+        let fee_percentage = effective_fee_bps(env, market)?;
 
         Ok(FeeBreakdown {
             total_staked,
@@ -1193,9 +1203,21 @@ impl FeeCalculator {
             .ok_or(Error::MarketNotResolved)?;
         let users = crate::bets::BetStorage::get_all_bets_for_market(env, market_id);
 
-        // Determine the total amount staked on winning outcomes.
+        // Match settlement's voter-first deduplication: legacy voters can also
+        // have a Bet record, but their stake must only be counted once.
         let mut winning_total = 0i128;
+        for (user, outcome) in market.votes.iter() {
+            if winning_outcomes.contains(&outcome) {
+                winning_total = Self::checked_fee_add(
+                    winning_total,
+                    market.stakes.get(user.clone()).unwrap_or(0),
+                )?;
+            }
+        }
         for user in users.iter() {
+            if market.votes.contains_key(user.clone()) {
+                continue;
+            }
             if let Some(bet) = crate::bets::BetStorage::get_bet(env, market_id, &user) {
                 let is_winning = winning_outcomes
                     .iter()
@@ -1211,21 +1233,31 @@ impl FeeCalculator {
             return Ok(0);
         }
 
-        // Use the fee percentage active when the earliest bet was placed,
-        // matching `calculate_platform_fee_with_env`.
-        let mut earliest_timestamp = env.ledger().timestamp();
-        for user in users.iter() {
-            if let Some(bet) = crate::bets::BetStorage::get_bet(env, market_id, &user) {
-                if bet.timestamp < earliest_timestamp {
-                    earliest_timestamp = bet.timestamp;
-                }
-            }
-        }
-        let fee_percentage = FeeManager::get_fee_percentage_for_timestamp(env, earliest_timestamp);
+        let fee_percentage = effective_fee_bps(env, market)?;
 
-        // Sum the deterministic payouts that the existing payout formula will produce.
+        // Sum all deterministically payable winners using the same voter-first
+        // ordering as `distribute_payouts`.
         let mut expected_payouts = 0i128;
+        for (user, outcome) in market.votes.iter() {
+            if !winning_outcomes.contains(&outcome) {
+                continue;
+            }
+            let stake = market.stakes.get(user.clone()).unwrap_or(0);
+            if stake <= 0 {
+                continue;
+            }
+            let user_share = Self::checked_bps_floor(
+                stake,
+                crate::config::PERCENTAGE_DENOMINATOR - fee_percentage,
+            )?;
+            let payout =
+                Self::checked_mul_div_floor(user_share, market.total_staked, winning_total)?;
+            expected_payouts = Self::checked_fee_add(expected_payouts, payout)?;
+        }
         for user in users.iter() {
+            if market.votes.contains_key(user.clone()) {
+                continue;
+            }
             if let Some(bet) = crate::bets::BetStorage::get_bet(env, market_id, &user) {
                 let is_winning = winning_outcomes
                     .iter()
@@ -1538,7 +1570,7 @@ impl FeeValidator {
 
     /// Validate fee amount
     pub fn validate_fee_amount(fee_amount: i128) -> Result<(), Error> {
-        if fee_amount < MIN_FEE_AMOUNT {
+        if fee_amount < 0 {
             return Err(Error::InsufficientStake);
         }
 

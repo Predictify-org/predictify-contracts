@@ -3,6 +3,8 @@
 
 use soroban_sdk::{contracttype, Env, String, Symbol, Vec};
 
+pub const MAX_VERSION_HISTORY_ENTRIES: u32 = 32;
+
 use crate::err::Error;
 
 /// Explicit opt-in token that a caller must pass to `apply_migration` (or
@@ -484,6 +486,9 @@ impl VersionHistory {
 
     /// Add a new version to history
     pub fn add_version(&mut self, env: &Env, version: Version) {
+        while self.versions.len() >= MAX_VERSION_HISTORY_ENTRIES {
+            self.versions.remove(0);
+        }
         self.versions.push_back(version.clone());
         self.current_version = version;
         self.last_updated = env.ledger().timestamp();
@@ -602,6 +607,10 @@ impl VersionManager {
             Ok(h) => h,
             Err(_) => VersionHistory::new(env),
         };
+
+        if version.version_number() <= history.current_version.version_number() {
+            return Err(Error::InvalidInput);
+        }
 
         // If this is the first version (replacing initial 0.0.0), replace it
         if history.versions.len() == 0 && history.current_version.version_number() == 0 {

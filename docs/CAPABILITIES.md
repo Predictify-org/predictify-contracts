@@ -71,6 +71,29 @@ if ((caps & 0x0001n) !== 0n) {
 
 Bits 26 through 63 are reserved for future capabilities and will read as 0.
 
+## Full-build administrative entrypoints
+
+The full build requires the primary admin to authenticate and pass identity
+validation before any of these state-changing operations can run:
+
+- `cleanup_old_market_data(env, admin, market_id)`
+- `migrate_storage_format(env, admin, from_format, to_format)`
+- `update_storage_config(env, admin, config)`
+- `track_contract_version(env, admin, version)`
+- `migrate_data_between_versions(env, admin, old_version, new_version)`
+- `upgrade_to_version(env, admin, target_version)`
+- `rollback_to_version(env, admin, target_version)`
+
+Successful calls emit the admin-action event and append an audit record whose
+actor is the authorizing admin. Cleanup rejects future-dated markets, markets
+with an unclaimed winner before the claim deadline, and cancelled markets with
+refunds still outstanding. Storage configuration requires a nonzero cleanup
+threshold and TTLs no lower than the minimums in [`STORAGE_TIER.md`](./STORAGE_TIER.md).
+Version tracking accepts only strictly increasing versions and retains at most
+32 version entries. Caller-supplied error-recovery and monitoring-alert event
+entrypoints are not exposed; contract-generated monitoring and recovery events
+remain available.
+
 ## Compatibility
 
 - **Adding a capability** sets a previously-zero bit to 1. This is a

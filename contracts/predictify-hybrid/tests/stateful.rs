@@ -635,7 +635,7 @@ proptest! {
         state.env.mock_all_auths();
         let market_id = client.create_market(
             &state.admin,
-            &SorobanString::from_str(&state.env, "Test"),
+            &SorobanString::from_str(&state.env, "Will the test market resolve yes?"),
             &outcomes,
             &duration_days,
             &OracleConfig {
@@ -692,7 +692,7 @@ proptest! {
     #[test]
     fn test_idempotency(
         user_idx in 0..MAX_USERS,
-        stake in 1i128..=MAX_STAKE,
+        stake in 1_000_000i128..=MAX_STAKE,
     ) {
         let mut state = TestState::new(MAX_USERS);
         let user = state.user(user_idx).clone();
@@ -701,14 +701,14 @@ proptest! {
         let client = state.client();
         let outcomes = vec![
             &state.env,
-            SorobanString::from_str(&state.env, "A"),
-            SorobanString::from_str(&state.env, "B"),
+            SorobanString::from_str(&state.env, "Yes"),
+            SorobanString::from_str(&state.env, "No"),
         ];
 
         state.env.mock_all_auths();
         let market_id = client.create_market(
             &state.admin,
-            &SorobanString::from_str(&state.env, "Test"),
+            &SorobanString::from_str(&state.env, "Will the test market resolve yes?"),
             &outcomes,
             &7,
             &OracleConfig {
@@ -732,7 +732,7 @@ proptest! {
         let first_result = client.try_vote(
             &user,
             &market_id,
-            &SorobanString::from_str(&state.env, "A"),
+            &SorobanString::from_str(&state.env, "Yes"),
             &stake,
         );
 
@@ -741,16 +741,12 @@ proptest! {
         let second_result = client.try_vote(
             &user,
             &market_id,
-            &SorobanString::from_str(&state.env, "B"),
+            &SorobanString::from_str(&state.env, "No"),
             &stake,
         );
 
-        if first_result.is_ok() {
-            prop_assert!(
-                second_result.is_err(),
-                "Second vote should fail with AlreadyVoted"
-            );
-        }
+        prop_assert!(first_result.is_ok(), "First valid vote must succeed: {:?}", first_result);
+        prop_assert_eq!(second_result, Err(Ok(soroban_sdk::Error::from_contract_error(Error::AlreadyVoted as u32))), "Duplicate vote must return AlreadyVoted");
     }
 }
 
@@ -818,7 +814,7 @@ fn test_vote_on_active_market() {
     state.env.mock_all_auths();
     let market_id = client.create_market(
         &state.admin,
-        &SorobanString::from_str(&state.env, "Test"),
+        &SorobanString::from_str(&state.env, "Will the test market resolve yes?"),
         &outcomes,
         &7,
         &OracleConfig {
@@ -864,7 +860,7 @@ fn test_no_vote_after_market_ends() {
     state.env.mock_all_auths();
     let market_id = client.create_market(
         &state.admin,
-        &SorobanString::from_str(&state.env, "Test"),
+        &SorobanString::from_str(&state.env, "Will the test market resolve yes?"),
         &outcomes,
         &1, // 1 day
         &OracleConfig {
