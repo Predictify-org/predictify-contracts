@@ -998,6 +998,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "predictify-analytics"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "predictify-hybrid"
 version = "0.0.0"
 dependencies = [
