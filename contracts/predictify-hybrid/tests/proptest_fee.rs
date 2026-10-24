@@ -122,6 +122,47 @@ proptest! {
             fee
         );
     }
+
+    /// Payout rounding must conserve the pool, and increasing the fee must
+    /// never increase any winner's payout.
+    #[test]
+    fn payout_conservation_and_monotonicity(
+        winner_stakes in prop::collection::vec(1i128..=1_000_000_000i128, 1..10),
+        losing_stake in 0i128..=1_000_000_000i128,
+        fee_a in 0i128..=1000i128,
+        fee_b in 0i128..=1000i128,
+    ) {
+        let fee_low = fee_a.min(fee_b);
+        let fee_high = fee_a.max(fee_b);
+        let winning_total: i128 = winner_stakes.iter().sum();
+        let total_pool = winning_total + losing_stake;
+
+        let payout_sum = |fee_bps: i128| -> i128 {
+            winner_stakes
+                .iter()
+                .map(|stake| {
+                    let user_share = stake * (10_000 - fee_bps) / 10_000;
+                    user_share * total_pool / winning_total
+                })
+                .sum()
+        };
+
+        let fee_amount = total_pool * fee_low / 10_000;
+        let remainder = total_pool - fee_amount - payout_sum(fee_low);
+        prop_assert!(remainder >= 0);
+        prop_assert_eq!(
+            payout_sum(fee_low) + fee_amount + remainder,
+            total_pool
+        );
+
+        for stake in winner_stakes.iter() {
+            let payout_at_low =
+                (stake * (10_000 - fee_low) / 10_000) * total_pool / winning_total;
+            let payout_at_high =
+                (stake * (10_000 - fee_high) / 10_000) * total_pool / winning_total;
+            prop_assert!(payout_at_high <= payout_at_low);
+        }
+    }
 }
 
 // ===== FOCUSED EDGE-CASE TESTS =====

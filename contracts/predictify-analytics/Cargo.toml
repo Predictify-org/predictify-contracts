@@ -1,0 +1,16 @@
+[package]
+name = "predictify-analytics"
+version = "0.1.0"
+edition = "2021"
+description = "Read-only analytics contract for Predictify, reading core views via cross-contract calls"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

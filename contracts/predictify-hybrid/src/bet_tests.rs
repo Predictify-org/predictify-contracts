@@ -1206,7 +1206,12 @@ fn test_bet_slippage_batch_path_reverts() {
 fn test_get_live_fee_percentage() {
     let setup = BetTestSetup::new_with_fee(Some(250));
     setup.env.as_contract(&setup.contract_id, || {
-        let fee = BetManager::get_live_fee_percentage(&setup.env).unwrap();
+        let market = crate::markets::MarketStateManager::get_market(
+            &setup.env,
+            &setup.market_id,
+        )
+        .unwrap();
+        let fee = BetManager::get_live_fee_percentage(&setup.env, &market).unwrap();
         assert_eq!(fee, 250);
     });
 }

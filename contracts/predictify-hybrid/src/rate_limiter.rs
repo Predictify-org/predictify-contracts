@@ -1,4 +1,4 @@
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, Address, Env, Symbol};
+use soroban_sdk::{contracterror, contracttype, Address, Env, Symbol};
 
 /// How the token bucket refills between requests.
 ///
@@ -90,16 +90,6 @@ pub struct RateLimiter {
 impl RateLimiter {
     pub fn new(env: Env) -> Self {
         RateLimiter { env }
-    }
-
-    // Initialize rate limiter with default configuration
-    pub fn init_rate_limiter(
-        &self,
-        admin: Address,
-        config: RateLimitConfig,
-    ) -> Result<(), RateLimiterError> {
-        admin.require_auth();
-        self.init_rate_limiter_no_auth(config)
     }
 
     /// Validate and store the rate-limit configuration without requiring
@@ -388,9 +378,8 @@ impl RateLimiter {
     }
 
     // Update rate limits (admin only). Caller must have already authenticated admin.
-    pub fn update_rate_limits(
+    pub(crate) fn update_rate_limits(
         &self,
-        _admin: Address,
         limits: RateLimitConfig,
     ) -> Result<(), RateLimiterError> {
         self.validate_rate_limit_configuration(&limits)?;
@@ -517,83 +506,6 @@ pub enum RateLimiterError {
     InvalidHalfLife = 10,
 }
 
-#[contract]
-pub struct RateLimiterContract;
-
-#[contractimpl]
-impl RateLimiterContract {
-    // Initialize the rate limiter
-    pub fn init_rate_limiter(
-        env: Env,
-        admin: Address,
-        config: RateLimitConfig,
-    ) -> Result<(), RateLimiterError> {
-        let limiter = RateLimiter::new(env);
-        limiter.init_rate_limiter(admin, config)
-    }
-
-    // Check and enforce voting rate limit
-    pub fn check_voting_rate_limit(
-        env: Env,
-        user: Address,
-        market_id: Symbol,
-    ) -> Result<(), RateLimiterError> {
-        let limiter = RateLimiter::new(env);
-        limiter.rate_limit_voting(user, market_id)
-    }
-
-    // Check and enforce dispute rate limit
-    pub fn check_dispute_rate_limit(
-        env: Env,
-        user: Address,
-        market_id: Symbol,
-    ) -> Result<(), RateLimiterError> {
-        let limiter = RateLimiter::new(env);
-        limiter.rate_limit_disputes(user, market_id)
-    }
-
-    // Check and enforce oracle call rate limit
-    pub fn check_oracle_rate_limit(env: Env, market_id: Symbol) -> Result<(), RateLimiterError> {
-        let limiter = RateLimiter::new(env);
-        limiter.rate_limit_oracle_calls(market_id)
-    }
-
-    // Check and enforce admin event creation rate limit
-    pub fn check_admin_event_rate_limit(env: Env, admin: Address) -> Result<(), RateLimiterError> {
-        let limiter = RateLimiter::new(env);
-        limiter.rate_limit_admin_events(admin)
-    }
-
-    // Update rate limits (admin only)
-    pub fn update_rate_limits(
-        env: Env,
-        admin: Address,
-        limits: RateLimitConfig,
-    ) -> Result<(), RateLimiterError> {
-        let limiter = RateLimiter::new(env);
-        limiter.update_rate_limits(admin, limits)
-    }
-
-    // Get rate limit status for a user
-    pub fn get_rate_limit_status(
-        env: Env,
-        user: Address,
-        market_id: Symbol,
-    ) -> Result<RateLimitStatus, RateLimiterError> {
-        let limiter = RateLimiter::new(env);
-        limiter.get_rate_limit_status(user, market_id)
-    }
-
-    // Validate rate limit configuration
-    pub fn validate_rate_limit_config(
-        env: Env,
-        config: RateLimitConfig,
-    ) -> Result<(), RateLimiterError> {
-        let limiter = RateLimiter::new(env);
-        limiter.validate_rate_limit_configuration(&config)
-    }
-}
-
 /////////////////////////////////////////////////////////////
 ////                     TEST                        ///////
 ///////////////////////////////////////////////////////////
@@ -601,10 +513,77 @@ impl RateLimiterContract {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soroban_sdk::{contract, contractimpl};
     use soroban_sdk::{
         testutils::{Address as _, AuthorizedInvocation},
         Env,
     };
+
+    #[contract]
+    pub struct RateLimiterContract;
+
+    #[contractimpl]
+    impl RateLimiterContract {
+        pub fn init_rate_limiter(
+            env: Env,
+            admin: Address,
+            config: RateLimitConfig,
+        ) -> Result<(), RateLimiterError> {
+            admin.require_auth();
+            let limiter = RateLimiter::new(env);
+            limiter.init_rate_limiter_no_auth(config)
+        }
+
+        pub fn check_voting_rate_limit(
+            env: Env,
+            user: Address,
+            market_id: Symbol,
+        ) -> Result<(), RateLimiterError> {
+            let limiter = RateLimiter::new(env);
+            limiter.rate_limit_voting(user, market_id)
+        }
+
+        pub fn check_dispute_rate_limit(
+            env: Env,
+            user: Address,
+            market_id: Symbol,
+        ) -> Result<(), RateLimiterError> {
+            let limiter = RateLimiter::new(env);
+            limiter.rate_limit_disputes(user, market_id)
+        }
+
+        pub fn check_oracle_rate_limit(env: Env, market_id: Symbol) -> Result<(), RateLimiterError> {
+            let limiter = RateLimiter::new(env);
+            limiter.rate_limit_oracle_calls(market_id)
+        }
+
+        pub fn update_rate_limits(
+            env: Env,
+            admin: Address,
+            limits: RateLimitConfig,
+        ) -> Result<(), RateLimiterError> {
+            admin.require_auth();
+            let limiter = RateLimiter::new(env);
+            limiter.update_rate_limits(limits)
+        }
+
+        pub fn get_rate_limit_status(
+            env: Env,
+            user: Address,
+            market_id: Symbol,
+        ) -> Result<RateLimitStatus, RateLimiterError> {
+            let limiter = RateLimiter::new(env);
+            limiter.get_rate_limit_status(user, market_id)
+        }
+
+        pub fn validate_rate_limit_config(
+            env: Env,
+            config: RateLimitConfig,
+        ) -> Result<(), RateLimiterError> {
+            let limiter = RateLimiter::new(env);
+            limiter.validate_rate_limit_configuration(&config)
+        }
+    }
 
     fn create_test_config() -> RateLimitConfig {
         RateLimitConfig {

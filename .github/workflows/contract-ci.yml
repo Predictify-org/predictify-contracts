@@ -15,11 +15,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
+      - name: Check ignored-test budget
+        run: bash scripts/check_ignored_tests.sh
       - name: Build
         run: cargo build -p predictify-hybrid
       - name: Test stable crates
         run: cargo test -p hello-world -p oracles
       - name: Test predictify-hybrid
         run: cargo test -p predictify-hybrid --lib
+      - name: Test predictify-hybrid integration targets
+        run: |
+          start=$SECONDS
+          cargo test -p predictify-hybrid --tests
+          echo "Integration test step: $((SECONDS - start)) seconds (includes lib rerun)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Test predictify-analytics
+        run: cargo test -p predictify-analytics
+      - name: Build analytics WASM (size budget)
+        run: ./scripts/build_analytics_wasm.sh
       - name: Slim (deployable) feature set compiles
         run: cargo check -p predictify-hybrid --no-default-features

@@ -16,6 +16,10 @@ Complete API reference for Predictify Hybrid contract, including:
 - **[Query Implementation Guide](./api/QUERY_IMPLEMENTATION_GUIDE.md)** - Paginated query API, `PagedResult<T>`, security notes, and integrator quick-start
   - **NEW**: [Dashboard Statistics Queries](#-dashboard-statistics-queries) - Platform aggregates, market metrics, leaderboards with stable field versioning
 
+### 🧪 [Contract Testing](./TESTING.md)
+
+Focused test commands and the single-frame authorization regression coverage.
+
 ### 🔒 [Security Documentation](./security/)
 
 Comprehensive security documentation and guidelines:

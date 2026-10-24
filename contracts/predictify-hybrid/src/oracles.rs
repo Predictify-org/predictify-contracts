@@ -874,6 +874,25 @@ impl<'a> ReflectorOracleClient<'a> {
         res
     }
 
+    /// Fetch the latest price without trapping when the oracle call fails.
+    ///
+    /// Unlike [`Self::lastprice`], a missing contract, a trapping oracle, or a
+    /// feed with no data all surface as [`Error::OracleUnavailable`] so callers
+    /// can fall back or require manual resolution instead of aborting.
+    pub fn try_lastprice(&self, asset: ReflectorAsset) -> Result<ReflectorPriceData, Error> {
+        let args = vec![self.env, asset.into_val(self.env)];
+        match self
+            .env
+            .try_invoke_contract::<Option<ReflectorPriceData>, soroban_sdk::Error>(
+                &self.contract_id,
+                &symbol_short!("lastprice"),
+                args,
+            ) {
+            Ok(Ok(Some(data))) => Ok(data),
+            _ => Err(Error::OracleUnavailable),
+        }
+    }
+
     /// Fetch a historical price for the supplied asset and ledger timestamp.
     ///
     /// # Arguments
@@ -1943,6 +1962,68 @@ impl OracleDeviationHistory {
 
         let mid = (n as usize) / 2;
         Some(deviations[mid])
+    }
+}
+
+/// Resolves a market outcome from a live oracle price feed.
+///
+/// Queries the configured Reflector contract, validates the quote (freshness,
+/// range, outlier guards), compares it against the market threshold and returns
+/// the winning outcome. Every failure is a typed [`Error`]; no fallback value is
+/// ever produced.
+pub struct OracleOutcomeResolver;
+
+impl OracleOutcomeResolver {
+    /// Map a feed id (`"BTC"` or `"BTC/USD"`) to a Reflector asset, rejecting unknown feeds.
+    fn reflector_asset(env: &Env, feed_id: &String) -> Result<ReflectorAsset, Error> {
+        for base in ["BTC", "ETH", "XLM", "USDC"] {
+            if feed_id == &String::from_str(env, base) {
+                return Ok(ReflectorAsset::Other(Symbol::new(env, base)));
+            }
+            let mut pair = alloc::string::String::from(base);
+            pair.push_str("/USD");
+            if feed_id == &String::from_str(env, &pair) {
+                return Ok(ReflectorAsset::Other(Symbol::new(env, base)));
+            }
+        }
+        Err(Error::InvalidOracleFeed)
+    }
+
+    /// Fetch the latest price for `config` and return `"yes"` or `"no"`.
+    pub fn resolve_outcome(
+        env: &Env,
+        market_id: &Symbol,
+        config: &OracleConfig,
+    ) -> Result<String, Error> {
+        if !config.is_active() {
+            return Err(Error::OracleUnavailable);
+        }
+        if !OracleFactory::is_provider_supported(&config.provider)
+            || config.provider != OracleProvider::reflector()
+        {
+            return Err(Error::InvalidOracleConfig);
+        }
+
+        let asset = Self::reflector_asset(env, &config.feed_id)?;
+        let quote = ReflectorOracleClient::new(env, config.oracle_address.clone())
+            .try_lastprice(asset)?;
+
+        let data = OraclePriceData {
+            price: quote.price,
+            publish_time: quote.timestamp,
+            confidence: None,
+            exponent: 0,
+        };
+        OracleValidationConfigManager::validate_oracle_data(
+            env,
+            market_id,
+            &config.provider,
+            &config.feed_id,
+            &data,
+        )?;
+        OracleUtils::validate_oracle_response(data.price).map_err(|_| Error::OracleUnavailable)?;
+
+        OracleUtils::determine_outcome(data.price, config.threshold, &config.comparison, env)
     }
 }
 
@@ -3016,7 +3097,7 @@ impl OracleValidationConfigManager {
             EventEmitter::emit_oracle_validation_failed(
                 env,
                 market_id,
-                &provider.name(),
+                &provider.name_in(env),
                 feed_id,
                 &String::from_str(env, "stale_data"),
                 observed_age,
@@ -3055,7 +3136,7 @@ impl OracleValidationConfigManager {
                     EventEmitter::emit_oracle_validation_failed(
                         env,
                         market_id,
-                        &provider.name(),
+                        &provider.name_in(env),
                         feed_id,
                         &String::from_str(env, "confidence_too_wide"),
                         observed_age,
@@ -3104,7 +3185,7 @@ impl OracleValidationConfigManager {
                             EventEmitter::emit_oracle_validation_failed(
                                 env,
                                 market_id,
-                                &provider.name(),
+                                &provider.name_in(env),
                                 feed_id,
                                 &String::from_str(env, "rolling_median_outlier"),
                                 observed_age,
@@ -3144,7 +3225,7 @@ impl OracleValidationConfigManager {
                         EventEmitter::emit_oracle_validation_failed(
                             env,
                             market_id,
-                            &provider.name(),
+                            &provider.name_in(env),
                             feed_id,
                             &String::from_str(env, "price_deviation_exceeded"),
                             observed_age,
@@ -3404,7 +3485,7 @@ impl OracleIntegrationManager {
             oracle_result.price,
             oracle_result.threshold,
             &oracle_result.comparison,
-            &oracle_result.provider.name(),
+            &oracle_result.provider.name_in(env),
             &oracle_result.feed_id,
             oracle_result.confidence_score,
             oracle_result.sources_count,

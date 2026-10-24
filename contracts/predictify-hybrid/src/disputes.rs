@@ -53,7 +53,9 @@ use soroban_sdk::{contracttype, symbol_short, Address, Env, Map, String, Symbol,
 /// 1. **Creation**: User stakes tokens and provides reasoning
 /// 2. **Community Voting**: Other users vote on dispute validity
 /// 3. **Resolution**: Dispute is resolved based on community consensus
-/// 4. **Fee Distribution**: Stakes are distributed to winning side
+/// 4. **Stake Refund**: If the dispute overturns the oracle result, every
+///    disputer's locked stake is returned in full (see [`DisputeManager::resolve_dispute_authorized`]).
+/// 5. **Fee Distribution**: Any remaining stakes are distributed to the winning side
 ///
 /// # Staking Requirements
 ///
@@ -735,7 +737,7 @@ pub struct TimeoutAnalytics {
 /// # let market_id = Symbol::new(&env, "market_123");
 ///
 /// // User disputes a market result
-/// let result = DisputeManager::process_dispute(
+/// let result = DisputeManager::process_dispute_authorized(
 ///     &env,
 ///     user.clone(),
 ///     market_id.clone(),
@@ -744,7 +746,7 @@ pub struct TimeoutAnalytics {
 /// );
 ///
 /// // Admin resolves the dispute after community voting
-/// let resolution = DisputeManager::resolve_dispute(
+/// let resolution = DisputeManager::resolve_dispute_authorized(
 ///     &env,
 ///     market_id.clone(),
 ///     admin.clone()
@@ -893,7 +895,7 @@ impl DisputeManager {
     /// # let market_id = Symbol::new(&env, "btc_price_market");
     ///
     /// // User disputes oracle result with reasoning
-    /// let result = DisputeManager::process_dispute(
+    /// let result = DisputeManager::process_dispute_authorized(
     ///     &env,
     ///     user.clone(),
     ///     market_id.clone(),
@@ -931,7 +933,7 @@ impl DisputeManager {
     /// - Validates market state to ensure disputes are only allowed when appropriate
     /// - Enforces minimum stake requirements to prevent spam
     /// - Checks for duplicate disputes from the same user
-    pub fn process_dispute(
+    pub(crate) fn process_dispute_authorized(
         env: &Env,
         user: Address,
         market_id: Symbol,
@@ -1099,7 +1101,7 @@ impl DisputeManager {
     /// # let market_id = Symbol::new(&env, "disputed_market");
     ///
     /// // Admin resolves dispute after voting period
-    /// let resolution = DisputeManager::resolve_dispute(
+    /// let resolution = DisputeManager::resolve_dispute_authorized(
     ///     &env,
     ///     market_id.clone(),
     ///     admin.clone()
@@ -1147,13 +1149,13 @@ impl DisputeManager {
     /// - Correct application of resolution algorithms
     /// - Appropriate handling of edge cases
     /// - Consistent resolution quality across markets
-    pub fn resolve_dispute(
+    pub(crate) fn resolve_dispute_authorized(
         env: &Env,
         market_id: Symbol,
         admin: Address,
     ) -> Result<DisputeResolution, Error> {
-        // Require authentication from the admin
-        admin.require_auth();
+        // Authorization is enforced by the entrypoint, which calls
+        // `admin.require_auth()` before delegating here (single-frame auth).
 
         // SECURITY: Validate admin permissions - enforce strict authorization
         DisputeValidator::validate_admin_permissions(env, &admin)?;
@@ -1173,6 +1175,10 @@ impl DisputeManager {
 
         // Determine final outcome with dispute consideration
         let final_outcome = DisputeUtils::determine_final_outcome_with_disputes(env, &market)?;
+        let oracle_was_overturned = match market.oracle_result.as_ref() {
+            Some(oracle_outcome) => oracle_outcome != &final_outcome,
+            None => false,
+        };
 
         // Calculate weights
         let oracle_weight = DisputeAnalytics::calculate_oracle_weight(&market);
@@ -1191,6 +1197,17 @@ impl DisputeManager {
         // Update market with final outcome
         DisputeUtils::finalize_market_with_resolution(&mut market, final_outcome)?;
         MarketStateManager::update_market(env, &market_id, &market);
+
+        if oracle_was_overturned {
+            let token_client = crate::markets::MarketUtils::get_token_client(env)?;
+            let contract_address = env.current_contract_address();
+            for (disputer, stake) in market.dispute_stakes.iter() {
+                if stake <= 0 {
+                    return Err(Error::InvalidInput);
+                }
+                token_client.transfer(&contract_address, &disputer, &stake);
+            }
+        }
 
         // SECURITY: Update history status with strict state transitions
         // Only Active disputes can transition to Resolved
@@ -1552,7 +1569,7 @@ impl DisputeManager {
     /// # let dispute_id = Symbol::new(&env, "dispute_456");
     ///
     /// // Vote to support the dispute
-    /// let result = DisputeManager::vote_on_dispute(
+    /// let result = DisputeManager::vote_on_dispute_authorized(
     ///     &env,
     ///     voter.clone(),
     ///     market_id.clone(),
@@ -1569,7 +1586,7 @@ impl DisputeManager {
     ///
     /// // Vote to reject the dispute
     /// let other_voter = Address::generate(&env);
-    /// let reject_result = DisputeManager::vote_on_dispute(
+    /// let reject_result = DisputeManager::vote_on_dispute_authorized(
     ///     &env,
     ///     other_voter,
     ///     market_id,
@@ -1610,7 +1627,7 @@ impl DisputeManager {
     /// - Stake amounts reflect voter confidence
     /// - Economic penalties discourage frivolous voting
     /// - Proportional rewards based on stake size
-    pub fn vote_on_dispute(
+    pub(crate) fn vote_on_dispute_authorized(
         env: &Env,
         user: Address,
         market_id: Symbol,
@@ -1619,8 +1636,8 @@ impl DisputeManager {
         stake: i128,
         reason: Option<String>,
     ) -> Result<(), Error> {
-        // Require authentication from the user
-        user.require_auth();
+        // Authorization is enforced by the entrypoint, which calls
+        // `user.require_auth()` before delegating here (single-frame auth).
 
         // Reject self-vote: the dispute opener cannot vote on their own dispute
         let market = MarketStateManager::get_market(env, &market_id)?;
@@ -2447,7 +2464,8 @@ impl DisputeManager {
         admin: &Address,
         function_name: &Symbol,
     ) -> Result<(), Error> {
-        admin.require_auth();
+        // Every caller authenticates before checking cooldown. Repeating
+        // require_auth in the same frame aborts Soroban simulation.
         DisputeValidator::validate_admin_permissions(env, admin)?;
         let cooldown = Self::get_admin_cooldown(env);
         if cooldown == 0 {
@@ -3741,6 +3759,66 @@ mod tests {
     }
 
     #[test]
+    fn test_dispute_stake_is_refunded_when_resolution_favors_disputer() {
+        let env = Env::default();
+        env.mock_all_auths_allowing_non_root_auth();
+
+        let admin = Address::generate(&env);
+        let user = Address::generate(&env);
+        let contract_id = env.register(crate::PredictifyHybrid, ());
+        let market_id = Symbol::new(&env, "refund_market");
+
+        let token_admin = Address::generate(&env);
+        let token_contract = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_address = token_contract.address();
+        let token_client = soroban_sdk::token::Client::new(&env, &token_address);
+        let stellar_client = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
+        stellar_client.mint(&user, &10_000_000_000i128);
+
+        env.as_contract(&contract_id, || {
+            env.storage().persistent().set(&Symbol::new(&env, "Admin"), &admin);
+            env.storage()
+                .persistent()
+                .set(&Symbol::new(&env, "TokenID"), &token_address);
+
+            let mut market = create_test_market(&env, env.ledger().timestamp().saturating_sub(1));
+            market.oracle_result = Some(String::from_str(&env, "yes"));
+            market.state = crate::types::MarketState::Ended;
+            market.total_staked = 1_000;
+
+            let voter = Address::generate(&env);
+            market.votes.set(voter.clone(), String::from_str(&env, "no"));
+            market.stakes.set(voter, 1_000);
+            MarketStateManager::update_market(&env, &market_id, &market);
+
+            let initial_balance = token_client.balance(&user);
+            let stake = MIN_DISPUTE_STAKE;
+            DisputeManager::process_dispute_authorized(
+                &env,
+                user.clone(),
+                market_id.clone(),
+                stake,
+                None,
+            )
+                .unwrap();
+
+            let balance_after_dispute = token_client.balance(&user);
+            assert_eq!(balance_after_dispute, initial_balance - stake);
+
+            let contract_balance_before_refund = token_client.balance(&env.current_contract_address());
+            let resolution =
+                DisputeManager::resolve_dispute_authorized(&env, market_id.clone(), admin.clone())
+                    .unwrap();
+
+            assert_eq!(resolution.final_outcome, String::from_str(&env, "no"));
+            let balance_after_refund = token_client.balance(&user);
+            assert_eq!(balance_after_refund, initial_balance);
+            assert_eq!(token_client.balance(&env.current_contract_address()), 0);
+            assert_eq!(contract_balance_before_refund, stake);
+        });
+    }
+
+    #[test]
     fn test_testing_utilities() {
         let env = Env::default();
         let user = Address::generate(&env);
@@ -3903,14 +3981,13 @@ mod tests {
             
             // Stake 1200: higher than global (1000) but lower than market (1500). Should fail.
             assert_eq!(
-                DisputeManager::process_dispute(&env, user.clone(), market_id.clone(), 1200, None).unwrap_err(),
+                DisputeManager::process_dispute_authorized(&env, user.clone(), market_id.clone(), 1200, None).unwrap_err(),
                 Error::InvalidStakeAmount
             );
             
             // Stake 2000: higher than both. 
-            // process_dispute doesn't check if user has balance in tests because the contract doesn't have the mock balance set up
-            // Wait, process_dispute internally locks funds, which will fail if there's no balance.
-            // I should use DisputeValidator directly to just check the dispute stake check.
+            // process_dispute_authorized internally locks funds, which will fail if there's no balance
+            // in this test setup, so use DisputeValidator directly to check the stake rules.
             assert_eq!(
                 DisputeValidator::validate_dispute_parameters(&env, &market_id, &user, &market, 1200).unwrap_err(),
                 Error::InvalidStakeAmount
