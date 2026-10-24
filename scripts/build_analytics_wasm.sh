@@ -1,13 +1,22 @@
-#!/usb/env bash
-# Build the predictify-analytics contract WASM and enforce the size budget.
-#
-# The deployable analytics contract must fit within the Soroban 128 KiB contract
-# limit. This script fails if the produced WASM exceeds 131,072 bytes (128 KiB).
-#
+#!/usr/bin/env bash
 set -euo pipefail
 
-MAX_SIZE_BYTES=131072
-CRATE_DIR="contracts/predictify-analytics"
-WASM_NAME="predictify_analytics.wasm"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MAX_SIZE_BYTES="${WASM_SIZE_BUDGET:-131072}"
+WASM_FILE="$ROOT_DIR/target/wasm32v1-none/release/predictify_analytics.wasm"
 
-ROOT_DIR="$(cd "$(dirname "${"}
+cd "$ROOT_DIR"
+cargo build --release --target wasm32v1-none -p predictify-analytics
+
+if [[ ! -f "$WASM_FILE" ]]; then
+    echo "Error: analytics WASM was not produced: $WASM_FILE" >&2
+    exit 1
+fi
+
+SIZE_BYTES="$(wc -c < "$WASM_FILE")"
+echo "Analytics WASM: $SIZE_BYTES bytes (limit: $MAX_SIZE_BYTES)"
+
+if (( SIZE_BYTES > MAX_SIZE_BYTES )); then
+    echo "Error: analytics WASM exceeds the configured size budget." >&2
+    exit 1
+fi

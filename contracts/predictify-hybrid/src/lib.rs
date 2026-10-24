@@ -71,7 +71,7 @@ mod validation;
 // mod validation_tests; // disabled - API drift
 mod versioning;
 mod voting;
-mod market_analytics;
+pub mod market_analytics;
 mod performance_benchmarks;
 mod disputes;
 mod edge_cases;

@@ -1,11 +1,11 @@
 # Testing status
 
-After syncing with upstream master `49a4762`, workspace builds remain blocked by
-the incomplete `predictify-analytics` package: its manifest declares a library
-but the package has no `src/lib.rs`. See
-[the synchronization report](test-output/pr-1470-master-sync.md) for the errors
-and isolated hybrid validation. The #1463 results below predate the latest
-upstream sync; full-workspace checks must be repeated after analytics is repaired.
+The `predictify-analytics` contract provides read-only cross-contract views over
+market, voting, dispute, participation, fee, comparison, and oracle analytics
+from `predictify-hybrid`. It has no independent state; queries take the core
+contract address explicitly and forward the core contract's returned data.
+See [the synchronization report](test-output/pr-1470-master-sync.md) for the
+upstream package issue and its repair.
 
 ```sh
 cargo test -p predictify-hybrid --lib     # 730 passed, 0 failed, 172 ignored
@@ -13,15 +13,19 @@ cargo test -p predictify-hybrid --lib bets::tests # 41 passed, none ignored
 cargo test -p predictify-hybrid --lib balances    # 5 passed, none ignored
 cargo test -p predictify-hybrid --tests
 cargo test -p hello-world -p oracles
+cargo test -p predictify-analytics
+cargo build --release --target wasm32v1-none -p predictify-analytics
+./scripts/build_analytics_wasm.sh
 cargo check -p predictify-hybrid --no-default-features
 bash scripts/check_ignored_tests.sh
 ```
 
-CI (`.github/workflows/contract-ci.yml`) runs the library, all 11 active integration
-targets, stable crates, the slim feature check, and the ignored-test ratchet on
-every push/PR targeting master. Swatinem/rust-cache is shared across these steps.
-Cargo's `--tests` also reruns the library tests. The integration step writes its
-elapsed seconds, including that rerun, to the GitHub Actions job summary.
+CI (`.github/workflows/contract-ci.yml`) runs the library, all 11 active
+integration targets, stable crates, analytics tests and its 128 KiB WASM budget
+check, the slim feature check, and the ignored-test ratchet on every push/PR
+targeting master. Swatinem/rust-cache is shared across these steps. Cargo's
+`--tests` also reruns the library tests. The integration step writes its elapsed
+seconds, including that rerun, to the GitHub Actions job summary.
 
 ## Single-frame authorization
 
