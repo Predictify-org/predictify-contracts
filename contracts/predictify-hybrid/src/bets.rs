@@ -18,6 +18,29 @@
 //! - User authentication via `require_auth()`
 //! - Balance validation before fund transfer
 //! - Market state validation before accepting bets
+//!
+//! ## Unified Stake Ledger
+//!
+//! `vote` and `place_bet` are the two exported ways to put tokens into a
+//! market. Both route through [`BetManager::record_stake`], the single
+//! validated stake ledger. A user has **at most one stake per market**,
+//! regardless of entrypoint:
+//!
+//! - A repeat vote returns `Error::AlreadyVoted`.
+//! - A repeat bet (active `BetStorage` entry) returns `Error::AlreadyBet`.
+//! - Staking through the *other* entrypoint after already staking (vote →
+//!   bet, or bet → vote) returns `Error::AlreadyBet` — the single documented
+//!   cross-ledger error. The second stake is rejected atomically; the first
+//!   stake stays intact and claimable.
+//!
+//! Validation order is identical for both entrypoints (pinned by
+//! `stake_ledger_unification_tests`): circuit breaker → per-ledger bet cap →
+//! market state → bet deadline → outcome → amount bounds → duplicate stake →
+//! participant capacity → per-user cap → checked `total_staked` → `lock_funds`
+//! → state writes. No state is written before the transfer succeeds.
+//!
+//! `cancel_bet` refunds the bet and only removes market ledger entries that
+//! the bet itself created (its exact mirror in `market.stakes`).
 
 use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Map, String, Symbol, Vec};
 
@@ -355,15 +378,17 @@ impl BetManager {
         amount: i128,
         max_fee_bps: i128,
     ) -> Result<Bet, Error> {
+        // The emergency pause is checked before anything else (also re-checked
+        // inside `record_stake`, which `vote` shares).
         crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "betting")?;
-        // Require authentication from the user
+        // Require authentication from the user. This is the single
+        // `require_auth` on the bet path: `record_stake` and every helper it
+        // calls are internal and never re-authorize.
         user.require_auth();
 
-        // Enforce global per-ledger bet cap
+        // Enforce per-user bet limit. The global per-ledger bet cap is
+        // enforced once inside `record_stake`.
         let rate_limiter = crate::rate_limiter::RateLimiter::new(env.clone());
-        rate_limiter.rate_limit_global_bets_per_ledger()?;
-
-        // Enforce per-user bet limit
         if let Err(rate_err) = rate_limiter.rate_limit_bets(user.clone()) {
             if !matches!(rate_err, crate::rate_limiter::RateLimiterError::ConfigNotFound) {
                 return Err(Error::from(rate_err));
@@ -371,8 +396,9 @@ impl BetManager {
             // ConfigNotFound means no rate limit configured, so skip
         }
 
-        // Get and validate market
-        let mut market = MarketStateManager::get_market(env, &market_id)?;
+        // Read the market for the fee slippage guard; `record_stake` re-reads
+        // and fully validates it before any write.
+        let market = MarketStateManager::get_market(env, &market_id)?;
 
         // Resolve and validate the fee once before any fund or bet-state write.
         // A zero max_fee_bps keeps the existing "no slippage guard" behaviour.
@@ -383,31 +409,21 @@ impl BetManager {
             }
         }
 
-        BetValidator::validate_market_for_betting(env, &market)?;
-
-        // Validate bet parameters (uses configurable min/max limits per event or global)
-        BetValidator::validate_bet_parameters(env, &market_id, &outcome, &market.outcomes, amount)?;
-
-        // Check if user has already bet on this market. A successful retry therefore
-        // deterministically returns AlreadyBet instead of applying the bet twice.
-        if let Some(existing_bet) = Self::get_bet(env, &market_id, &user) {
-            if existing_bet.status != crate::types::BetStatus::Cancelled {
-                return Err(Error::AlreadyBet);
-            }
-        }
-
         // ===== ATOMIC BET PREPARATION =====
         // Complete every predictable/fallible calculation before moving funds.
-        // Once the transfer succeeds, only already-prepared storage values are committed.
         // Any host-level failure still reverts the whole Soroban invocation atomically.
-        let prepared_user_stake =
-            BetValidator::prepare_user_stake_update(env, &market_id, &user, amount)?;
         let prepared_stats = Self::prepare_market_bet_stats(env, &market_id, &outcome, amount)?;
-        let prepared_total_staked = market
-            .total_staked
-            .checked_add(amount)
-            .ok_or(Error::Overflow)?;
 
+        // ===== UNIFIED STAKE LEDGER =====
+        // `record_stake` enforces, in order: circuit breaker, per-ledger cap,
+        // market state, bet deadline, outcome, amount bounds, duplicate stake
+        // (across BOTH `market.votes` and `BetStorage`), participant capacity,
+        // per-user cap and checked `total_staked`. It then locks funds and
+        // writes the shared ledger (votes/stakes/total_staked/user stake).
+        // The `vote` entrypoint routes through this same function.
+        Self::record_stake(env, &user, &market_id, &outcome, amount, StakeSource::Bet)?;
+
+        // Bet-specific state, written only after `lock_funds` succeeded.
         let bet = Bet::new(
             env,
             user.clone(),
@@ -415,28 +431,129 @@ impl BetManager {
             outcome.clone(),
             amount,
         );
-
-        market.total_staked = prepared_total_staked;
-
-        // Keep the legacy vote/stake mirrors in the same prepared market value.
-        market.votes.set(user.clone(), outcome.clone());
-        market.stakes.set(user.clone(), amount);
-
-        // ===== ATOMIC COMMIT =====
-        // No validation or arithmetic that can return an application error occurs
-        // after this point. The token transfer and all state writes therefore either
-        // commit together or are reverted together by Soroban.
-        BetUtils::lock_funds(env, &user, amount)?;
-
         BetStorage::store_bet(env, &bet)?;
-        BetValidator::store_user_stake(env, &market_id, &user, prepared_user_stake);
         BetStorage::store_market_bet_stats(env, &market_id, &prepared_stats)?;
-        MarketStateManager::update_market(env, &market_id, &market);
 
         // Emit only after the transfer and all state writes have completed.
         EventEmitter::emit_bet_placed(env, &market_id, &user, &outcome, amount);
 
         Ok(bet)
+    }
+
+    /// The single validated stake ledger shared by `vote` and `place_bet`
+    /// (issue: vote/place_bet stake ledger divergence).
+    ///
+    /// Runs, in this exact order (pinned by
+    /// `stake_ledger_unification_tests::test_error_precedence_order`):
+    ///
+    /// 1. circuit breaker (`"betting"`, `Error::CBOpen` when paused)
+    /// 2. global per-ledger bet cap (`Error::PerLedgerBetCapExceeded`)
+    /// 3. market exists, is `Active`, and is before the effective bet deadline
+    /// 4. outcome is valid for the market (`Error::InvalidOutcome`)
+    /// 5. amount within effective min/max limits and per-market cap
+    /// 6. no existing stake in either ledger (see [`Self::require_no_existing_stake`])
+    /// 7. `max_participants` capacity (`Error::MaxParticipantsReached`)
+    /// 8. per-user cumulative cap and checked `total_staked`
+    ///    (`Error::MaxBetCapExceeded`, `Error::Overflow` — typed, never a trap)
+    ///
+    /// Only after every check passes are funds locked (`BetUtils::lock_funds`)
+    /// and the shared ledger written (`market.votes`, `market.stakes`,
+    /// `market.total_staked`, the per-market user stake). No state is written
+    /// before the transfer succeeds.
+    ///
+    /// `source` only selects the duplicate-stake error; all validation is
+    /// identical for votes and bets.
+    pub fn record_stake(
+        env: &Env,
+        user: &Address,
+        market_id: &Symbol,
+        outcome: &String,
+        amount: i128,
+        source: StakeSource,
+    ) -> Result<(), Error> {
+        // 1. The emergency pause applies to every staking path, votes included.
+        crate::circuit_breaker::CircuitBreaker::require_write_allowed(env, "betting")?;
+
+        // 2. Global per-ledger bet cap (no-op unless an admin enabled it).
+        let rate_limiter = crate::rate_limiter::RateLimiter::new(env.clone());
+        rate_limiter.rate_limit_global_bets_per_ledger()?;
+
+        // 3. Market must exist, still be Active, and be before its betting cutoff.
+        let mut market = MarketStateManager::get_market(env, market_id)?;
+        BetValidator::validate_market_for_betting(env, &market)?;
+
+        // 4./5. Outcome validity first, then amount bounds (min/max/per-market cap).
+        BetValidator::validate_bet_parameters(env, market_id, outcome, &market.outcomes, amount)?;
+
+        // 6. One stake per user per market across both ledgers.
+        Self::require_no_existing_stake(env, &market, market_id, user, source)?;
+
+        // 7. Participant capacity counts every staked user (votes and bets).
+        if let Some(max) = market.max_participants {
+            if market.votes.len() >= max {
+                return Err(Error::MaxParticipantsReached);
+            }
+        }
+
+        // 8. Per-user cumulative cap and checked total (typed error, no trap).
+        let prepared_user_stake =
+            BetValidator::prepare_user_stake_update(env, market_id, user, amount)?;
+        let prepared_total_staked = market
+            .total_staked
+            .checked_add(amount)
+            .ok_or(Error::Overflow)?;
+
+        // ===== ATOMIC COMMIT =====
+        // No state is written before the transfer succeeds. Everything after
+        // the transfer is an infallible write so all stake state commits or
+        // reverts together.
+        BetUtils::lock_funds(env, user, amount)?;
+
+        market.total_staked = prepared_total_staked;
+        // Legacy vote/stake mirrors kept in sync for the claim and payout paths.
+        market.votes.set(user.clone(), outcome.clone());
+        market.stakes.set(user.clone(), amount);
+        MarketStateManager::update_market(env, market_id, &market);
+
+        BetValidator::store_user_stake(env, market_id, user, prepared_user_stake);
+
+        Ok(())
+    }
+
+    /// Reject a stake when the user already has one on this market, in either
+    /// ledger (`market.votes` for votes, `BetStorage` for bets).
+    ///
+    /// Error mapping:
+    ///
+    /// - repeat bet (active `BetStorage` entry) → [`Error::AlreadyBet`]
+    /// - repeat vote (`market.votes` entry, no active bet) → [`Error::AlreadyVoted`]
+    /// - cross-entrypoint stake (vote → bet or bet → vote) → [`Error::AlreadyBet`],
+    ///   the single documented error for the unified ledger
+    fn require_no_existing_stake(
+        env: &Env,
+        market: &Market,
+        market_id: &Symbol,
+        user: &Address,
+        source: StakeSource,
+    ) -> Result<(), Error> {
+        // BetStorage is authoritative when an active bet exists.
+        if let Some(existing_bet) = Self::get_bet(env, market_id, user) {
+            if existing_bet.status != BetStatus::Cancelled {
+                return Err(Error::AlreadyBet);
+            }
+        }
+
+        if market.votes.contains_key(user.clone()) {
+            return match source {
+                StakeSource::Vote => Err(Error::AlreadyVoted),
+                // A bet on top of an existing vote stake is exactly the
+                // divergence this ledger unifies: reject with the single
+                // cross-stake error so the first stake is never overwritten.
+                StakeSource::Bet => Err(Error::AlreadyBet),
+            };
+        }
+
+        Ok(())
     }
 
     /// Place multiple bets atomically in a single transaction.
@@ -569,6 +686,12 @@ impl BetManager {
                 if existing_bet.status != crate::types::BetStatus::Cancelled {
                     return Err(Error::AlreadyBet);
                 }
+            }
+
+            // Unified stake ledger: also reject stakes recorded in the vote
+            // ledger — one stake per user per market across both entrypoints.
+            if market.votes.contains_key(user.clone()) {
+                return Err(Error::AlreadyBet);
             }
 
             // Accumulate total amount
@@ -972,10 +1095,15 @@ impl BetManager {
         // Update market betting stats
         Self::update_market_bet_stats_on_cancel(env, &market_id, &bet.outcome, bet.amount)?;
 
-        // Update market struct to reverse stakes
+        // Update market struct to reverse stakes. `cancel_bet` only removes
+        // ledger entries that the bet itself created: a bet mirrors its exact
+        // amount into `market.stakes`, so a mismatch means this entry belongs
+        // to a pre-unification vote stake and must stay claimable.
         market.total_staked = market.total_staked.saturating_sub(bet.amount);
-        market.votes.remove(user.clone());
-        market.stakes.remove(user.clone());
+        if market.stakes.get(user.clone()) == Some(bet.amount) {
+            market.votes.remove(user.clone());
+            market.stakes.remove(user.clone());
+        }
         MarketStateManager::update_market(env, &market_id, &market);
 
         // Emit bet cancelled event
@@ -1019,6 +1147,19 @@ impl BetManager {
 
         Ok(())
     }
+}
+
+/// Origin of a stake entering the unified stake ledger.
+///
+/// Both exported staking entrypoints — `vote` and `place_bet` — delegate to
+/// [`BetManager::record_stake`]; the source only selects which duplicate
+/// stake error is returned. Validation is identical for both.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StakeSource {
+    /// Stake placed through the `vote` entrypoint.
+    Vote,
+    /// Stake placed through `place_bet` / `place_bets`.
+    Bet,
 }
 
 // ===== BET STORAGE =====
