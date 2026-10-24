@@ -183,7 +183,12 @@ fn payout_remainder_is_conserved() {
 
     advance_ledger(&env, 31 * 24 * 60 * 60);
     client.resolve_market_manual(&admin, &market, &String::from_str(&env, "yes"));
-    // Manual resolution automatically distributes into withdrawable balances.
+    // Resolution no longer pays out immediately (#1471): distribution is a
+    // separate call that is only allowed once the post-resolution dispute
+    // window has closed.
+    advance_ledger(&env, 31 * 24 * 60 * 60);
+    let credited = client.distribute_payouts(&market);
+    assert_eq!(credited, 97_999_999);
     let distributed = client.get_balance(&user, &ReflectorAsset::Stellar).amount
         + client.get_balance(&user2, &ReflectorAsset::Stellar).amount;
     assert_eq!(distributed, 97_999_999);
