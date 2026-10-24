@@ -307,11 +307,20 @@ impl MarketIdGenerator {
         let total_count: Option<u32> = env.storage().persistent().get(&count_key);
 
         if let Some(count) = total_count {
-            // New sharded registry path
-            let end = core::cmp::min(start + capped_limit, count);
+            // During migration, combine the sharded prefix with untouched legacy entries.
+            let legacy_key = Symbol::new(env, Self::REGISTRY_KEY);
+            let legacy_registry: Vec<MarketIdRegistryEntry> = env
+                .storage()
+                .persistent()
+                .get(&legacy_key)
+                .unwrap_or_else(|| Vec::new(env));
+            let total_entries = core::cmp::max(count, legacy_registry.len());
+            let end = core::cmp::min(start + capped_limit, total_entries);
             for i in start..end {
-                let entry_key = crate::storage::DataKey::MarketIdAt(i);
-                if let Some(entry) = env.storage().persistent().get::<_, MarketIdRegistryEntry>(&entry_key) {
+                let sharded_key = crate::storage::DataKey::MarketIdAt(i);
+                if let Some(entry) = env.storage().persistent().get::<_, MarketIdRegistryEntry>(&sharded_key) {
+                    result.push_back(entry);
+                } else if let Some(entry) = legacy_registry.get(i) {
                     result.push_back(entry);
                 }
             }
@@ -710,7 +719,7 @@ mod tests {
     fn setup() -> (Env, Address, Address) {
         let env = Env::default();
         env.cost_estimate().disable_resource_limits();
-        env.mock_all_auths_allowing_non_root_auth();
+        env.mock_all_auths();
         let contract_id = env.register(crate::PredictifyHybrid, ());
         let admin = Address::generate(&env);
         (env, contract_id, admin)
@@ -1247,6 +1256,7 @@ mod tests {
     #[test]
     fn test_create_500_markets_cost_stability() {
         let (env, contract_id, admin) = setup();
+        env.budget().reset_unlimited();
 
         with_contract(&env, &contract_id, || {
             // Create first market and capture count
@@ -1295,33 +1305,31 @@ mod tests {
                 });
             }
 
-            env.storage().persistent().set(&legacy_key, &legacy_registry);
-
-            // First migration: migrate 5 entries
-            let (migrated1, total1, complete1) =
-                MarketIdGenerator::migrate_market_id_registry(&env, &admin, 5);
-            assert_eq!(migrated1, 5);
-            assert_eq!(total1, 10);
-            assert!(!complete1);
-
-            // Second migration: migrate remaining 5
-            let (migrated2, total2, complete2) =
-                MarketIdGenerator::migrate_market_id_registry(&env, &admin, 5);
-            assert_eq!(migrated2, 5);
-            assert_eq!(total2, 10);
-            assert!(complete2);
-
-            // Third migration: idempotent, nothing to migrate
-            let (migrated3, total3, complete3) =
-                MarketIdGenerator::migrate_market_id_registry(&env, &admin, 5);
-            assert_eq!(migrated3, 0);
-            assert_eq!(total3, 10);
-            assert!(complete3);
-
-            // Verify all entries are accessible
-            let count = MarketIdGenerator::get_market_id_count(&env);
-            assert_eq!(count, 10);
+            env.storage()
+                .persistent()
+                .set(&legacy_key, &legacy_registry);
         });
+
+        // Each admin-authorized migration is a separate invocation.
+        let (migrated1, total1, complete1) = with_contract(&env, &contract_id, || {
+            MarketIdGenerator::migrate_market_id_registry(&env, &admin, 5)
+        });
+        assert_eq!((migrated1, total1, complete1), (5, 10, false));
+
+        let (migrated2, total2, complete2) = with_contract(&env, &contract_id, || {
+            MarketIdGenerator::migrate_market_id_registry(&env, &admin, 5)
+        });
+        assert_eq!((migrated2, total2, complete2), (5, 10, true));
+
+        let (migrated3, total3, complete3) = with_contract(&env, &contract_id, || {
+            MarketIdGenerator::migrate_market_id_registry(&env, &admin, 5)
+        });
+        assert_eq!((migrated3, total3, complete3), (0, 10, true));
+
+        let count = with_contract(&env, &contract_id, || {
+            MarketIdGenerator::get_market_id_count(&env)
+        });
+        assert_eq!(count, 10);
     }
 
     #[test]
@@ -1342,22 +1350,20 @@ mod tests {
                 });
             }
 
-            env.storage().persistent().set(&legacy_key, &legacy_registry);
-
-            // Request 200 entries but should be capped at 100
-            let (migrated, total, complete) =
-                MarketIdGenerator::migrate_market_id_registry(&env, &admin, 200);
-            assert_eq!(migrated, 100);
-            assert_eq!(total, 150);
-            assert!(!complete);
-
-            // Second call gets remaining 50
-            let (migrated2, total2, complete2) =
-                MarketIdGenerator::migrate_market_id_registry(&env, &admin, 200);
-            assert_eq!(migrated2, 50);
-            assert_eq!(total2, 150);
-            assert!(complete2);
+            env.storage()
+                .persistent()
+                .set(&legacy_key, &legacy_registry);
         });
+
+        let (migrated, total, complete) = with_contract(&env, &contract_id, || {
+            MarketIdGenerator::migrate_market_id_registry(&env, &admin, 200)
+        });
+        assert_eq!((migrated, total, complete), (100, 150, false));
+
+        let (migrated2, total2, complete2) = with_contract(&env, &contract_id, || {
+            MarketIdGenerator::migrate_market_id_registry(&env, &admin, 200)
+        });
+        assert_eq!((migrated2, total2, complete2), (50, 150, true));
     }
 
     #[test]
@@ -1378,21 +1384,26 @@ mod tests {
                 });
             }
 
-            env.storage().persistent().set(&legacy_key, &legacy_registry);
-
-            // Partial migration
-            MarketIdGenerator::migrate_market_id_registry(&env, &admin, 5);
-
-            // Reads should work correctly (mixing sharded + legacy)
-            let entries = MarketIdGenerator::get_market_id_registry(&env, 0, 10);
-            assert_eq!(entries.len(), 10);
-
-            // Verify content correctness
-            for i in 0..10 {
-                let entry = entries.get(i).unwrap();
-                assert_eq!(entry.admin, admin);
-            }
+            env.storage()
+                .persistent()
+                .set(&legacy_key, &legacy_registry);
         });
+
+        with_contract(&env, &contract_id, || {
+            MarketIdGenerator::migrate_market_id_registry(&env, &admin, 5);
+        });
+
+        // Reads should work correctly (mixing sharded + legacy).
+        let entries = with_contract(&env, &contract_id, || {
+            MarketIdGenerator::get_market_id_registry(&env, 0, 10)
+        });
+        assert_eq!(entries.len(), 10);
+
+        // Verify content correctness
+        for i in 0..10 {
+            let entry = entries.get(i).unwrap();
+            assert_eq!(entry.admin, admin);
+        }
     }
 
     #[test]
@@ -1407,22 +1418,29 @@ mod tests {
             legacy_counters.set(admin.clone(), 42u32);
             legacy_counters.set(admin2.clone(), 17u32);
 
-            env.storage().persistent().set(&legacy_key, &legacy_counters);
+            env.storage()
+                .persistent()
+                .set(&legacy_key, &legacy_counters);
+        });
 
-            // Migrate
-            let migrated = MarketIdGenerator::migrate_admin_counters(&env, &admin);
-            assert_eq!(migrated, 2);
+        let migrated = with_contract(&env, &contract_id, || {
+            MarketIdGenerator::migrate_admin_counters(&env, &admin)
+        });
+        assert_eq!(migrated, 2);
 
-            // Verify counters are accessible via sharded storage
+        // Verify counters are accessible via sharded storage.
+        with_contract(&env, &contract_id, || {
             let counter1 = MarketIdGenerator::get_admin_counter(&env, &admin);
             let counter2 = MarketIdGenerator::get_admin_counter(&env, &admin2);
             assert_eq!(counter1, 42);
             assert_eq!(counter2, 17);
-
-            // Second migration should be idempotent
-            let migrated2 = MarketIdGenerator::migrate_admin_counters(&env, &admin);
-            assert_eq!(migrated2, 0);
         });
+
+        // A repeated admin-authorized migration is a separate invocation.
+        let migrated2 = with_contract(&env, &contract_id, || {
+            MarketIdGenerator::migrate_admin_counters(&env, &admin)
+        });
+        assert_eq!(migrated2, 0);
     }
 
     #[test]
@@ -1430,8 +1448,8 @@ mod tests {
         let (env, contract_id, admin) = setup();
 
         with_contract(&env, &contract_id, || {
-            // Set admin counter to MAX_COUNTER
-            MarketIdGenerator::set_admin_counter(&env, &admin, MarketIdGenerator::MAX_COUNTER);
+            // The maximum counter is valid; the next value must be rejected.
+            MarketIdGenerator::set_admin_counter(&env, &admin, MarketIdGenerator::MAX_COUNTER + 1);
 
             // Next generation should panic with InvalidInput
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

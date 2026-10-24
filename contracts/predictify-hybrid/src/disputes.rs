@@ -1175,6 +1175,10 @@ impl DisputeManager {
 
         // Determine final outcome with dispute consideration
         let final_outcome = DisputeUtils::determine_final_outcome_with_disputes(env, &market)?;
+        let oracle_was_overturned = match market.oracle_result.as_ref() {
+            Some(oracle_outcome) => oracle_outcome != &final_outcome,
+            None => false,
+        };
 
         // Calculate weights
         let oracle_weight = DisputeAnalytics::calculate_oracle_weight(&market);
@@ -1193,6 +1197,17 @@ impl DisputeManager {
         // Update market with final outcome
         DisputeUtils::finalize_market_with_resolution(&mut market, final_outcome)?;
         MarketStateManager::update_market(env, &market_id, &market);
+
+        if oracle_was_overturned {
+            let token_client = crate::markets::MarketUtils::get_token_client(env)?;
+            let contract_address = env.current_contract_address();
+            for (disputer, stake) in market.dispute_stakes.iter() {
+                if stake <= 0 {
+                    return Err(Error::InvalidInput);
+                }
+                token_client.transfer(&contract_address, &disputer, &stake);
+            }
+        }
 
         // SECURITY: Update history status with strict state transitions
         // Only Active disputes can transition to Resolved

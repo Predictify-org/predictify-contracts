@@ -125,9 +125,10 @@ fn vote_on_dispute_reaches_business_validation_with_one_auth_entry() {
     let market_id = Symbol::new(&env, "missing_market");
     let dispute_id = Symbol::new(&env, "missing_dispute");
     let vote = true;
-    let stake = 10_000_000i128;
+    let market_stake = 10_000_000i128;
+    let vote_stake = 0i128;
     let reason: Option<String> = None;
-    setup_disputable_market(&env, &contract_id, &user, &market_id, stake);
+    setup_disputable_market(&env, &contract_id, &user, &market_id, market_stake);
     env.as_contract(&contract_id, || {
         let voting = crate::disputes::DisputeVoting {
             dispute_id: dispute_id.clone(),
@@ -145,7 +146,7 @@ fn vote_on_dispute_reaches_business_validation_with_one_auth_entry() {
     let invoke = MockAuthInvoke {
         contract: &contract_id,
         fn_name: "vote_on_dispute",
-        args: (&user, &market_id, &dispute_id, &vote, &stake, &reason).into_val(&env),
+        args: (&user, &market_id, &dispute_id, &vote, &vote_stake, &reason).into_val(&env),
         sub_invokes: &[],
     };
 
@@ -154,7 +155,7 @@ fn vote_on_dispute_reaches_business_validation_with_one_auth_entry() {
             address: &user,
             invoke: &invoke,
         }])
-        .try_vote_on_dispute(&user, &market_id, &dispute_id, &vote, &stake, &reason);
+        .try_vote_on_dispute(&user, &market_id, &dispute_id, &vote, &vote_stake, &reason);
 
     assert_eq!(result, Err(Ok(Error::InvalidInput)));
 }

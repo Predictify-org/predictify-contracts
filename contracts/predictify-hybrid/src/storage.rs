@@ -1793,7 +1793,7 @@ mod tests {
             .unwrap();
 
             let key = BalanceStorage::get_key(&env, &user, &asset);
-            let expected = StorageOptimizer::clamp_persistent_ttl(&env, 10_000);
+            let expected = StorageOptimizer::clamp_persistent_ttl(&env, config.balance_ttl_ledgers);
             assert_eq!(env.storage().persistent().get_ttl(&key), expected);
         });
     }

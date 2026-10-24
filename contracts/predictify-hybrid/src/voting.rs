@@ -1139,6 +1139,10 @@ pub struct VotingUtils;
 impl VotingUtils {
     /// Transfer stake from user to contract
     pub fn transfer_stake(env: &Env, user: &Address, stake: i128) -> Result<(), Error> {
+        if stake <= 0 {
+            return Err(Error::InvalidInput);
+        }
+
         // Reentrancy guard removed - external call protection no longer needed
         let token_client = MarketUtils::get_token_client(env)?;
         // Soroban token transfer returns (), assume success if no panic
